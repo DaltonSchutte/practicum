@@ -23,13 +23,15 @@ class PatternFunction:
         self.fargs = fargs
 
     def __call__(self, x):
-        def rolling(x, t):
-            i = 0
-            n = x.shape[0]
-            while (i+t) < n:
-                yield x[i:i+t]
+        windows = []
+        for i in range(len(x)):
+            windows.append(
+                x[i:(i+self.t)]
+            )
+            if i+self.t+1 == len(x):
+                break
 
-        for i, window in enumerate(rolling(x, self.t)):
+        for i, window in enumerate(windows):
             is_match = self.func(window, **self.fargs)
 
             if is_match:
@@ -41,7 +43,10 @@ class ControlChartBase:
     def __init__(
         self,
     ):
-        pass
+        self.patterns = {}
+
+    def add_patterns(self, patterns: dict[str,PatternFunction]):
+        self.patterns.update(patterns)
 
     def determine_parameters(self, data):
         raise NotImplementedError("Inhereting classes must overwrite!")
@@ -72,9 +77,6 @@ class FControlChart(ControlChartBase):
     def __init__(self):
         super().__init__()
         self.fitted = False
-
-    def add_patterns(self, patterns: dict[str,PatternFunction]):
-        self.patterns = patterns
 
     def determine_parameters(self, X, alpha=0.05):
         Q = np.zeros(np.size(X, 0))

@@ -16,18 +16,18 @@ import pandas
 import polars
 
 
-###########
+# ##########
 # GLOBALS #
-###########
+# ##########
 
 BACKENDS = [
     'polars',
     'pandas'
 ]
 
-###########
+# ##########
 # CLASSES #
-###########
+# ##########
 
 class TimeSeries:
     def __init__(
@@ -112,13 +112,18 @@ class TimeSeries:
         datetime_format: Optional[str]='%Y-%m-%d %H:%M:%S.%f'
     ) -> NoReturn:
         self.data[['date','time']] = eval(self.backend).DataFrame(
-            self.data[column].apply(parse_datetime).tolist()
+            self.data[column].apply(
+                lambda x: parse_datetime(
+                    x,
+                    datetime_format
+                )
+            ).tolist()
         )
 
 
-#############
+# ############
 # FUNCTIONS #
-#############
+# ############
 
 def parse_datetime(
     string: str,
