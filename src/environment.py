@@ -10,40 +10,101 @@ from typing import (
     Any
 )
 
-from tqdm.auto import tqdm
-
 import numpy as np
 
-from data import TimeSeries
+from .data import TimeSeries
 
 
 ###########
 # CLASSES #
 ###########
 
-class Environment(EnvBase):
-    def __init__(
-        self,
-        series: TimeSeries,
-        seed: Optional[int]=3141
-    ):
-        self.series = series
+class TimeSeriesEnv:
+    def __init__(self, timeseries: TimeSeries, feature_cols: list[str], label_col: str):
+        super().__init__()
+        self.timeseries = timeseries
+        self.dates = sorted(self.timeseries.time_series.keys())
+        self.feature_cols = feature_cols
+        self.label_col = label_col
 
-        self.date_order = list(series.time_series.keys())
-        self.date_order.sort()
-        self.t = 0
-        self.curr_date = self.date_order[self.t]
+        # Track when the agent lets it run after it should have been stopped
+        self.time_since_stopped = 0
+        self.total_t = sum(len(ts) for ts in self.timeseries.time_series.values())
+
+        # Reset will always be called immediately during training
+
+    def reset(self):
+        self.current_date_index = 0
+        self.current_date = self.dates[self.current_date_index]
+        self.current_time = 0
+        self.state = self.timeseries\
+                .time_series[self.current_date][self.feature_cols]\
+                .iloc[self.current_time].values
+        self.label = self.timeseries\
+                .time_series[self.current_date][self.label_col]\
+                .iloc[self.current_time]
+        self.time_since_stopped = 0
+        self.done = False
+        self.day_done = False
+        return self.state
+
+    def forgetful_state_transition(self, action):
+        if action==1:
+            next_state = np.zeros((1,len(self.feature_cols)))
+        else:
+            if self.current_time+1 >= len(self.timeseries.time_series[self.current_date]):
+                next_state = np.ones((1, len(self.feature_cols)))
+            else:
+                next_state = self.timeseries\
+                        .time_series[self.current_date][self.feature_cols]\
+                        .iloc[self.current_time+1]
+        return next_state
 
 
     def step(self, action: int):
-        pass
+        if action==1:
+            # The agent stops when the machine was stopped
+            if self.label==1:
+                reward = 10
+                self.day_done = True
+            # The agent stopped the machine early
+            else:
+                reward = -100
+                self.day_done = True
+        else:
+            # The agent has not stopped the machine when it should have been
+            if self.label==1:
+                self.time_since_stopped += 1
+                reward = -self.time_since_stopped
+            # The agent does not stop the machine early
+            else:
+                reward = 0.01
 
-    def _reward(self):
-        pass
+        day_ended = self.day_done
 
-    def reset(self):
-        self.t = 0
-        self.curr_date = self.date_order[self.t]
+        self.current_time += 1
+        # We reached the end of the time series for that day or the agent stopped
+        if (self.current_time >= len(self.timeseries.time_series[self.current_date])) \
+           or (self.day_done):
+            self.current_date_index += 1
+            self.current_time = 0
+            self.time_since_stopped = 0
+            self.day_done = False
 
-    def set_seed(self):
-        pass
+        # We reached the end of all the data
+        if self.current_date_index >= len(self.timeseries.time_series):
+            self.done = True
+            # Agent gets a bonus for getting to the end without a false alarm
+            if (action==0) and (self.label==0):
+                reward = 10
+            return self.state, reward, self.done, day_ended
+
+        # Next state and label
+        self.current_date = self.dates[self.current_date_index]
+        self.state = self.timeseries\
+                .time_series[self.current_date][self.feature_cols]\
+                .iloc[self.current_time].values
+        self.label = self.timeseries\
+                .time_series[self.current_date][self.label_col]\
+                .iloc[self.current_time]
+        return self.state, reward, self.done, day_ended

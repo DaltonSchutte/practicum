@@ -14,6 +14,9 @@
 
 # %%
 import os
+import pickle
+import random
+import datetime
 from string import Template
 from collections import namedtuple
 
@@ -23,7 +26,10 @@ import seaborn as sns
 import numpy as np
 import pandas as pd
 import torch
+from torch import nn
 from torch.utils.data import DataLoader
+
+from momentfm import MOMENTPipeline
 
 import sys
 sys.path.insert(0, '..')
@@ -38,159 +44,195 @@ from src.eval import (
 )
 
 # %%
+SEED = 3141
+random.seed(SEED)
+np.random.seed(SEED)
+torch.manual_seed(SEED)
 
-br_train = TimeSeries.from_csv(
+BATCH_SIZE = 4
+
+# %%
+train_ts = TimeSeries.from_csv(
     'pandas',
     '../data/blood-refrigerator/train.csv'
 )
-br_dev = TimeSeries.from_csv(
+valid_ts = TimeSeries.from_csv(
     'pandas',
     '../data/blood-refrigerator/val.csv'
 )
-br_test = TimeSeries.from_csv(
+test_ts = TimeSeries.from_csv(
     'pandas',
     '../data/blood-refrigerator/test.csv'
 )
-print(br_train.shape, br_dev.shape, br_test.shape)
-br_dev.head()
+
+train_ts.parse_datetime('timestamp')
+valid_ts.parse_datetime('timestamp')
+test_ts.parse_datetime('timestamp')
+
+train_ts.split_by_day()
+valid_ts.split_by_day()
+test_ts.split_by_day()
+
 
 # %%
-br_train.parse_datetime('timestamp')
-br_dev.parse_datetime('timestamp')
-br_test.parse_datetime('timestamp')
+temp = pd.concat(
+    train_ts.time_series[k].drop(
+        columns=['timestamp','PW_0.5h','date','time']
+    ) for k in train_ts.time_series.keys()
+)
 
-br_train.split_by_day()
-br_dev.split_by_day()
-br_test.split_by_day()
+FEATURE_COLS = [
+    c for c in temp.columns if np.std(temp[c])!=0
+]
+LABEL_COL = 'PW_0.5h'
 
-len(br_train.time_series), len(br_dev.time_series), len(br_test.time_series)
+temp = None
+del temp
+len(FEATURE_COLS)
 
 # %%
-splits = [0.25, 0.5, 0.75, 1.0]
-br_train_splits = {}
+def get_time_windows(df, window={'minutes': 20}):
+    tf = '%Y-%m-%d %H:%M:%S.%f'
+    windows = []
+    window_size = datetime.timedelta(**window)
+    df.reset_index(drop=True, inplace=True)
+    for i, row in df.iterrows():
+        start_t = datetime.datetime.strptime(row['timestamp'], tf)
+        for j, row2 in df.iloc[i:].iterrows():
+            end_t = datetime.datetime.strptime(row2['timestamp'], tf)
+            if end_t - start_t >= window_size:
+                try:
+                    label = df['PW_0.5h'].iloc[j+1]
+                except IndexError:
+                    label = df['PW_0.5h'].iloc[-1]
+                except err:
+                    print(err)
+                windows.append(
+                    (df.iloc[i:j+1], label)
+                )
+                break
+    return windows
 
-for pct in splits:
-    n_days = len(br_train.time_series)
-    train_days = list(br_train.time_series.keys())[-int(pct*n_days):]
-    y = pd.concat([
-        br_train.time_series[k]['PW_0.5h'] for k in train_days
-    ])
-    X = pd.concat([
-        br_train.time_series[k].drop(
-            columns=['timestamp','PW_0.5h','date','time']
-        ) for k in train_days
-    ])
+# %%
+save_dir = '../data/blood-refrigerator/preprocessed'
+if not os.path.isfile(os.path.join(save_dir, 'X_train.pkl')):
+    print('Making datasets...')
+    train_windows = {
+        dt: get_time_windows(ts) for dt, ts in train_ts.time_series.items()
+    }
 
-    # Drop std=0 variables
-    X = X[
-        [c for c in X.columns if np.std(X[c]) != 0]
+    valid_windows = {
+        dt: get_time_windows(ts) for dt, ts in valid_ts.time_series.items()
+    }
+    test_windows = {
+        dt: get_time_windows(ts) for dt, ts in test_ts.time_series.items()
+    }
+
+    X_train = [
+        df[FEATURE_COLS].values for pr in train_windows.values() for (df,_) in pr
+    ]
+    y_train = [
+        l for pr in train_windows.values() for (_,l) in pr
+    ]
+    X_valid = [
+        df[FEATURE_COLS].values for pr in valid_windows.values() for (df,_) in pr
+    ]
+    y_valid = [
+        l for pr in valid_windows.values() for (_,l) in pr
+    ]
+    X_test = [
+        df[FEATURE_COLS].values for pr in test_windows.values() for (df,_) in pr
+    ]
+    y_test = [
+        l for pr in test_windows.values() for (_,l) in pr
     ]
 
-    if pct == 0.25:
-        keep_cols = X.columns
-        
-    br_train_splits.update(
-        {
-            str(pct):
-            {
-                'X': X.values,
-                'y': y.values,
-                'cols': keep_cols.tolist()
-            }
-        }
-    )
-    print(f"{pct}\t-\t{X.shape}\t-\t{y.shape}\t-\n{keep_cols.tolist()}\n")
+    pickle.dump(X_train, open(os.path.join(save_dir, 'X_train.pkl'), 'wb'))
+    pickle.dump(y_train, open(os.path.join(save_dir, 'y_train.pkl'), 'wb'))
+    pickle.dump(X_valid, open(os.path.join(save_dir, 'X_valid.pkl'), 'wb'))
+    pickle.dump(y_valid, open(os.path.join(save_dir, 'y_valid.pkl'), 'wb'))
+    pickle.dump(X_test, open(os.path.join(save_dir, 'X_test.pkl'), 'wb'))
+    pickle.dump(y_test, open(os.path.join(save_dir, 'y_test.pkl'), 'wb'))
+else:
+    print('Loading...')
+    X_train = pickle.load(open(os.path.join(save_dir, 'X_train.pkl'), 'rb'))
+    y_train = pickle.load(open(os.path.join(save_dir, 'y_train.pkl'), 'rb'))
+    X_valid = pickle.load(open(os.path.join(save_dir, 'X_valid.pkl'), 'rb'))
+    y_valid = pickle.load(open(os.path.join(save_dir, 'y_valid.pkl'), 'rb'))
+    X_test = pickle.load(open(os.path.join(save_dir, 'X_test.pkl'), 'rb'))
+    y_test = pickle.load(open(os.path.join(save_dir, 'y_test.pkl'), 'rb'))
 
-# %%
-br_dev_data = {
-    'X': {dt: x[keep_cols].values for dt, x in br_dev.time_series.items()},
-    'y': {dt: x['PW_0.5h'].values for dt, x in br_dev.time_series.items()}
-}
-br_test_data = {
-    'X': {dt: x[keep_cols].values for dt, x in br_test.time_series.items()},
-    'y': {dt: x['PW_0.5h'].values for dt, x in br_test.time_series.items()}
+
+{
+    'train': (len(X_train), len(y_train), np.mean(y_train)),
+    'valid': (len(X_valid), len(y_valid), np.mean(y_valid)),
+    'test': (len(X_test), len(y_test), np.mean(y_test))
 }
 
 # %%
-br_train_X = []
-br_train_y = []
+from torch.utils.data import Dataset
+class DLDataset(Dataset):
+    def __init__(self, X, y):
+        self.X = X
+        self.y = y
 
-br_025 = br_train_splits['0.25']
+    def __len__(self):
+        return len(self.y)
 
-print(br_025['X'].shape)
+    def __getitem__(self, idx):
+        return (
+            torch.tensor(self.X[idx], dtype=torch.float32),
+            torch.tensor(self.y[idx], dtype=torch.long)
+        )
 
-br_train_X = np.lib.stride_tricks.sliding_window_view(
-    br_025['X'],
-    (512, 12)
-)
-br_train_y = np.lib.stride_tricks.sliding_window_view(
-    br_025['y'],
-    (512)
-)
-    
-br_train_X = torch.tensor(br_train_X).squeeze().reshape(-1,12,512).type(torch.float32).requires_grad_()
-br_train_y = torch.tensor(br_train_y).squeeze().type(torch.long)
-print(br_train_X.type(), br_train_y.type())
-br_train_X.shape, br_train_y.shape
+def collator(input):
+    Xs, ys = zip(*input)
+    Xs = torch.dstack([
+        torch.cat([X,torch.zeros((512-X.shape[0],X.shape[1]))]) for X in Xs
+    ])
+    return (Xs.permute(2,1,0).to(dtype=torch.float32), torch.hstack(ys))
 
 # %%
-br_val_X = torch.tensor(np.lib.stride_tricks.sliding_window_view(
-    np.concatenate(
-        list(br_dev_data['X'].values())
-    ),
-    (512,12)
-)).squeeze().reshape(-1,12,512).type(torch.float32).requires_grad_()
-br_val_y = torch.tensor(np.lib.stride_tricks.sliding_window_view(
-    np.concatenate(
-        list(br_dev_data['y'].values())
-    ),
-    (512)
-)).type(torch.long)
-br_test_X = torch.tensor(np.lib.stride_tricks.sliding_window_view(
-    np.concatenate(
-        list(br_test_data['X'].values())
-    ),
-    (512,12)
-)).squeeze().reshape(-1,12,512).type(torch.float32).requires_grad_()
-br_test_y = torch.tensor(np.lib.stride_tricks.sliding_window_view(
-    np.concatenate(
-        list(br_test_data['y'].values())
-    ),
-    (512)
-)).type(torch.long)
 
-print(br_val_X.type(), br_val_y.type(), br_test_X.type(), br_test_y.type())
-br_val_X.shape, br_val_y.shape, br_test_X.shape, br_test_y.shape
-        
-# %%
-br025_ds = TimeSeriesDataset(br_train_X, br_train_y)
+train_ds = DLDataset(X_train, y_train)
+valid_ds = DLDataset(X_valid, y_valid)
+test_ds = DLDataset(X_test, y_test)
+
 train_dl = DataLoader(
-    br025_ds,
-    batch_size=8,
-    shuffle=True
+    train_ds,
+    batch_size=BATCH_SIZE,
+    shuffle=True,
+    collate_fn=collator
 )
-
-# %%
-br_dev_ds = TimeSeriesDataset(br_val_X, br_val_y)
-br_test_ds = TimeSeriesDataset(br_test_X, br_test_y)
-
 valid_dl = DataLoader(
-    br_dev_ds,
-    batch_size=1,
-    shuffle=False
+    valid_ds
 )
 test_dl = DataLoader(
-    br_test_ds,
-    batch_size=1,
-    shuffle=False
+    test_ds
 )
+
+# %%
+for x, y in train_dl:
+    break
+
+x.shape, y.shape, x.dtype
 
 # %%
 model = DeepStoppingModel(
     'transformer',
-    12,
-    device='cuda'
+    len(FEATURE_COLS),
+    device='cuda',
+    save_dir='../results/deep/transformer.pt',
+    bsz=BATCH_SIZE
 )
+
+# %%
+pw1 = np.mean(train_ds.y)
+pw0 = 1-pw1
+pw0,pw1
+weights = torch.tensor([1/pw0,1/pw1])
+weights /= weights.sum()
+weights
 
 # %%
 # Expects tensors in [bsz, in_channels, seqlen]
@@ -198,9 +240,8 @@ model.train(
     5,
     train_dl,
     valid_dl,
-    lr=0.0001,
-    momentum=0.9,
-    dampening=0.0,
-    weight_decay=0.01,
-    nesterov=False
+    class_weight=weights,
+    lr=1e-3,
+    eta_min=1e-6,
+    weight_decay=0.01
 )
