@@ -172,6 +172,7 @@ for dir in os.listdir('../data'):
 
     test_result_for_out = []
 
+    # Non-strict eval
     for pct, res in test_matches.items():
         for pattern, matches in res.items():  
             diffs, mtfe = mean_time_from_event(test_data['y'], matches)
@@ -189,6 +190,7 @@ for dir in os.listdir('../data'):
                 )
             )
 
+    # Strict eval
     for pct, res in test_matches.items():
         for pattern, matches in res.items():  
             diffs, mtfe = mean_time_from_event(test_data['y'], matches, strict=True)

@@ -253,7 +253,7 @@ class NeuralNetGuidedMCTS:
                 print("Better mean reward! Saving...")
                 best_rewards = valid_mean
                 torch.save(
-                    self.net,
+                    self.net.state_dict(),
                     os.path.join(self.save_dir, 'network.pt')
                 )
                 pickle.dump(
