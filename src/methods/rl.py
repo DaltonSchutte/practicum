@@ -243,7 +243,7 @@ class NeuralNetGuidedMCTS:
                 pbar.update(1)
 
                 if day_done or done or (train_env.current_time % 4 == 0):
-                    print('learning')
+                    self.learn()
             
             self.scheduler.step()
             epoch_actions.update(
