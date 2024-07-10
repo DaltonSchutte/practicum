@@ -74,10 +74,33 @@ class DeepStoppingModel(nn.Module):
             )
         self.to(device)
 
-    def forward(self, x, hc: Optional=None) -> tuple:
+    def forward(self, x, hc: Optional=None, infer: Optional[bool]=False) -> tuple:
+        # This is needed due to a bug in momentfm that causes
+        # the model to return None if loaded using classification
+        # as the task
         if self.model_type == 'transformer':
-            x = self.model(x).reconstruction.reshape(-1,512,self.in_dim)
-            output = self.linear(x).reshape(-1,2,512)
+            bsz = 1 if infer else self.bsz
+
+            mask = torch.ones((bsz, 512)).to(self.device)
+            x = self.model.normalizer(x, mask=mask)
+            x = torch.nan_to_num(x, nan=0, posinf=0, neginf=0)
+            x = self.model.tokenizer(x)
+            enc = self.model.patch_embedding(x, mask=mask)
+            n = enc.shape[2]
+            enc = enc.reshape(
+                (bsz*self.in_dim, n, self.model.config.d_model)
+            )
+            out = self.model.encoder(inputs_embeds=enc).last_hidden_state
+            out = out.reshape(
+                (-1, self.in_dim, n, self.model.config.d_model)
+            )
+            out = out.permute(0,2,3,1).reshape(
+                bsz, n, self.model.config.d_model*self.in_dim
+            )
+            out = torch.mean(out, dim=1)
+            out = self.dropout(out)
+            output = self.linear(out)
+
         elif self.model_type == 'lstm':
             output, hc = self.model(x, hc)
         return output, hc
@@ -98,13 +121,15 @@ class DeepStoppingModel(nn.Module):
         self.model = MOMENTPipeline.from_pretrained(
             "AutonLab/MOMENT-1-large", 
             model_kwargs={
-                "task_name": "reconstruction",
+                "task_name": "classification",
                 "n_channels": self.in_dim,
-                "freeze_encoder": True,
-                "freeze_embedder": True
+                "freeze_encoder": False,
+                "freeze_embedder": True,
+                "num_class": 2
             },
         )
-        self.linear = nn.Linear(self.in_dim, 2)
+        self.linear = nn.Linear(self.in_dim*self.model.config.d_model, 2)
+        self.dropout = nn.Dropout(0.1)
 
     def _prepare_lstm(self):
         self.model = nn.Sequential(
@@ -114,6 +139,7 @@ class DeepStoppingModel(nn.Module):
                 self.n_layers
             ),
             nn.ReLU(),
+            nn.Dropout(0.1),
             nn.Linear(hid_dim, 2)
         )
 
@@ -141,28 +167,30 @@ class DeepStoppingModel(nn.Module):
         training_data,
         valid_data,
         class_weight: Optional[torch.Tensor]=torch.tensor([1.0,1.0]),
-        lr: Optional[float]=0.001,
-        momentum: Optional[float]=0.9,
-        dampening: Optional[float]=0.0,
+        lr: Optional[float]=1e-3,
+        eta_min: Optional[float]=1e-6,
         weight_decay: Optional[float]=0.0,
-        nesterov: Optional[bool]=True,
-        use_pbar: Optional[bool]=True
+        use_pbar: Optional[bool]=True,
+        debug: Optional[bool]=False
     ):
         self.best_loss = 1e9
         self.train_losses = []
         self._f1 = 'Training...'
+        self.since_improvement = 0
 
-        optimizer = optim.SGD(
+        optimizer = optim.AdamW(
             self.model.parameters(),
             lr=lr,
-            momentum=momentum,
-            dampening=dampening,
-            weight_decay=weight_decay,
-            nesterov=nesterov
+            weight_decay=weight_decay 
+        )
+        scheduler = optim.lr_scheduler.CosineAnnealingLR(
+            optimizer=optimizer,
+            T_max=epochs*len(training_data),
+            eta_min=eta_min
         )
         criterion = nn.CrossEntropyLoss(
-            weight=class_weight
-        ).to(self.device)
+            weight=class_weight.float()
+        )
 
         self.use_pbar = use_pbar
         self.pbar = None
@@ -176,13 +204,19 @@ class DeepStoppingModel(nn.Module):
                 training_data,
                 optimizer,
                 criterion,
-                hc
+                hc,
+                debug
             )
+            scheduler.step()
             hc, f1, clf_report = self._eval_step(
                 valid_data,
                 criterion,
-                hc
+                hc,
+                debug
             )
+
+            if self.since_improvement == 3:
+                break
 
         print(clf_report)
 
@@ -192,10 +226,12 @@ class DeepStoppingModel(nn.Module):
         training_data,
         optimizer,
         criterion,
-        hc,
+        hc=None,
+        debug=False
     ):
         self.model.train()
-        for batch in tqdm(training_data, total=int(14001/8)):
+        criterion.to(self.device)
+        for batch in tqdm(training_data, total=len(training_data)):
             inputs, labels = batch
             inputs = inputs.to(self.device)
             labels = labels.to(self.device)
@@ -218,34 +254,40 @@ class DeepStoppingModel(nn.Module):
                         'F1': self._f1
                     }
                 )
-            break
-            
+            if debug:
+                break
 
     def _eval_step(
         self,
         valid_data,
         criterion,
-        hc
+        hc,
+        debug
     ):
         self.model.eval()
         epoch_preds = []
         epoch_labels = []
         epoch_logits = []
+        criterion.to('cpu')
         with torch.no_grad():
-            for batch in tqdm(valid_data, total=13481):
+            for batch in tqdm(valid_data, total=len(valid_data)):
                 inputs, labels = batch
                 inputs = inputs.to(self.device)
                 labels = labels.to(self.device)
 
-                logits, hc = self.forward(inputs, hc)
+                logits, hc = self.forward(inputs, hc, infer=True)
 
-                # Both should be [512] shape
-                epoch_preds += logits.softmax(1).argmax(1).squeeze().cpu().numpy().tolist()
-                epoch_labels += labels.squeeze().cpu().numpy().tolist()
-                epoch_logits += logits.cpu().numpy().tolist()
-                break
+                epoch_preds.append(logits.softmax(1).argmax(1).cpu().numpy())
+                epoch_labels.append(labels.cpu().numpy())
+                epoch_logits.append(logits.cpu().reshape(-1,2).numpy())
 
-            print(epoch_labels, epoch_preds)
+                if debug:
+                    break
+
+            epoch_preds = np.concatenate(epoch_preds, axis=0)
+            epoch_labels = np.concatenate(epoch_labels, axis=0)
+            epoch_logits = np.concatenate(epoch_logits, axis=0)
+
             epoch_f1 = f1_score(
                 epoch_labels,
                 epoch_preds,
@@ -256,6 +298,7 @@ class DeepStoppingModel(nn.Module):
                 epoch_preds,
                 zero_division=0.0
             )
+            print(clf_report)
 
             loss = criterion(
                 torch.tensor(epoch_logits),
@@ -265,9 +308,12 @@ class DeepStoppingModel(nn.Module):
             if loss < self.best_loss:
                 torch.save(
                     self.model,
-                    save_dir
+                    self.save_dir
                 )
                 self.best_loss = loss
+                self.since_improvement = 0
+            else:
+                self.since_improvement += 1
         
         self._f1 = epoch_f1
 
@@ -278,4 +324,5 @@ class DeepStoppingModel(nn.Module):
                     'F1': self._f1
                 }
             )
+            self.pbar.update(1)
         return hc, epoch_f1, clf_report
