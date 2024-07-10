@@ -120,7 +120,9 @@ for dir in os.listdir('../data'):
     epochs = 20
     train_actions, train_rewards = alpha_stop.train(epochs, train_env, valid_env)
 
-    # Test
+    # Load and test best model
+    alpha_stop.net.load_state_dict(os.path.join('../results/rl',dir,'network.pt'))
+    alpha_stop.mcts = pickle.load(open(os.path.join('../results/rl',dir,'mcts.pkl'),)'rb')
     test_actions, test_rewards = alpha_stop.run(test_env)
     
     # Save output

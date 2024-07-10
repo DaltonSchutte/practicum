@@ -74,30 +74,6 @@ def get_time_windows(df, window={'minutes': 20}):
                 break
     return windows
 
-class DLDataset(Dataset):
-    def __init__(self, X, y):
-        self.X = X
-        self.y = y
-
-    def __len__(self):
-        return len(self.y)
-
-    def __getitem__(self, idx):
-        return (
-            torch.tensor(self.X[idx], dtype=torch.float32),
-            torch.tensor(self.y[idx], dtype=torch.long)
-        )
-
-def collator(input):
-    Xs, ys = zip(*input)
-    Xs = torch.dstack([
-        torch.cat([X,torch.zeros((512-X.shape[0],X.shape[1]))]) for X in Xs
-    ])
-    return (Xs.permute(2,1,0).to(dtype=torch.float32), torch.hstack(ys))
-
-
-
-
 # %%
 for dir in os.listdir('../data'):
     if dir == 'wrapper-machine':
@@ -213,10 +189,13 @@ for dir in os.listdir('../data'):
         collate_fn=collator
     )
     valid_dl = DataLoader(
-        valid_ds
+        valid_ds,
+        collate_fn=collator
     )
     test_dl = DataLoader(
-        test_ds
+        test_ds,
+        shuffle=False,
+        collate_fn=collator
     )
 
     model = DeepStoppingModel(
@@ -235,6 +214,7 @@ for dir in os.listdir('../data'):
     weights /= weights.sum()
     weights
 
+    # Train
     model.train(
         5,
         train_dl,
@@ -244,3 +224,23 @@ for dir in os.listdir('../data'):
         eta_min=1e-6,
         weight_decay=0.01
     )
+
+    # Load and test best model
+    model.load_state_dict(os.path.join('../results',dir,'transformer.pt'))
+    model.eval()
+    preds = {}
+    test_windows = {
+        dt: get_time_windows(ts) for dt, ts in test_ts.time_series.items()
+    }
+    with torch.no_grad():
+        for dt, windows in test_windows.items():
+            preds.update({dt:[]})
+            for window, l in windows:
+                X = torch.tensor(window[FEATURE_COLS].values, dtype=torch.float32, device=model.device)
+                y = torch.tensor(l, dtype=torch.long, device=model.device)
+                X, mask, y = collator((X, y))
+                mask = mask.to(model.device)
+
+                pred = 
+                window_pred = 
+            

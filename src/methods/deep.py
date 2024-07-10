@@ -25,6 +25,26 @@ from momentfm import MOMENTPipeline
 MOMENT = "AutonLab/MOMENT-1-large"
 
 
+#############
+# FUNCTIONS #
+#############
+
+def collator(input):
+    Xs, ys = zip(*input)
+    masks = torch.vstack([
+        torch.cat([torch.ones((X.shape[0])),torch.zeros((512-X.shape[0]))]) for X in Xs
+    ])
+    Xs = torch.dstack([
+        torch.cat([X,torch.zeros((512-X.shape[0],X.shape[1]))]) for X in Xs
+    ])
+    
+    return (
+        Xs.permute(2,1,0).to(dtype=torch.float32),  # [bsz, n_channels, seqlen]
+        masks.to(dtype=torch.long),                 # [bsz, seqlen]
+        torch.hstack(ys)                            # [bsz]
+    )
+
+
 ###########
 # CLASSES #
 ###########
@@ -42,7 +62,22 @@ class TimeSeriesDataset(Dataset):
         
     def __len__(self):
         return self.y.shape[0]
+
  
+class DLDataset(Dataset):
+    def __init__(self, X, y):
+        self.X = X
+        self.y = y
+
+    def __len__(self):
+        return len(self.y)
+
+    def __getitem__(self, idx):
+        return (
+            torch.tensor(self.X[idx], dtype=torch.float32),
+            torch.tensor(self.y[idx], dtype=torch.long)
+        )
+
 
 class DeepStoppingModel(nn.Module):
     def __init__(
@@ -74,14 +109,16 @@ class DeepStoppingModel(nn.Module):
             )
         self.to(device)
 
-    def forward(self, x, hc: Optional=None, infer: Optional[bool]=False) -> tuple:
+    def forward(self, x, hc: Optional=None, mask: Optional=None, infer: Optional[bool]=False) -> tuple:
         # This is needed due to a bug in momentfm that causes
         # the model to return None if loaded using classification
         # as the task
         if self.model_type == 'transformer':
             bsz = 1 if infer else self.bsz
 
-            mask = torch.ones((bsz, 512)).to(self.device)
+            if mask is None:
+                mask = torch.ones((bsz, 512)).to(self.device)
+            
             x = self.model.normalizer(x, mask=mask)
             x = torch.nan_to_num(x, nan=0, posinf=0, neginf=0)
             x = self.model.tokenizer(x)
@@ -232,12 +269,13 @@ class DeepStoppingModel(nn.Module):
         self.model.train()
         criterion.to(self.device)
         for batch in tqdm(training_data, total=len(training_data)):
-            inputs, labels = batch
+            inputs, masks, labels = batch
             inputs = inputs.to(self.device)
+            masks = masks.to(self.device)
             labels = labels.to(self.device)
 
             optimizer.zero_grad()
-            logits, hc = self.forward(inputs, hc)
+            logits, hc = self.forward(inputs, hc, masks)
             loss = criterion(logits, labels)
 
             self.train_losses.append(
@@ -271,11 +309,12 @@ class DeepStoppingModel(nn.Module):
         criterion.to('cpu')
         with torch.no_grad():
             for batch in tqdm(valid_data, total=len(valid_data)):
-                inputs, labels = batch
+                inputs, masks, labels = batch
                 inputs = inputs.to(self.device)
+                masks = masks.to(self.device)
                 labels = labels.to(self.device)
 
-                logits, hc = self.forward(inputs, hc, infer=True)
+                logits, hc = self.forward(inputs, hc, masks, infer=True)
 
                 epoch_preds.append(logits.softmax(1).argmax(1).cpu().numpy())
                 epoch_labels.append(labels.cpu().numpy())

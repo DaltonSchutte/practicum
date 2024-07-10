@@ -36,7 +36,9 @@ sys.path.insert(0, '..')
 from src.data import TimeSeries
 from src.methods.deep import (
     DeepStoppingModel,
-    TimeSeriesDataset
+    TimeSeriesDataset,
+    DLDataset,
+    collator
 )
 from src.eval import (
     mean_time_from_event,
@@ -49,7 +51,7 @@ random.seed(SEED)
 np.random.seed(SEED)
 torch.manual_seed(SEED)
 
-BATCH_SIZE = 4
+BATCH_SIZE = 8
 
 # %%
 train_ts = TimeSeries.from_csv(
@@ -169,31 +171,8 @@ else:
     'test': (len(X_test), len(y_test), np.mean(y_test))
 }
 
-# %%
-from torch.utils.data import Dataset
-class DLDataset(Dataset):
-    def __init__(self, X, y):
-        self.X = X
-        self.y = y
-
-    def __len__(self):
-        return len(self.y)
-
-    def __getitem__(self, idx):
-        return (
-            torch.tensor(self.X[idx], dtype=torch.float32),
-            torch.tensor(self.y[idx], dtype=torch.long)
-        )
-
-def collator(input):
-    Xs, ys = zip(*input)
-    Xs = torch.dstack([
-        torch.cat([X,torch.zeros((512-X.shape[0],X.shape[1]))]) for X in Xs
-    ])
-    return (Xs.permute(2,1,0).to(dtype=torch.float32), torch.hstack(ys))
 
 # %%
-
 train_ds = DLDataset(X_train, y_train)
 valid_ds = DLDataset(X_valid, y_valid)
 test_ds = DLDataset(X_test, y_test)
@@ -202,20 +181,23 @@ train_dl = DataLoader(
     train_ds,
     batch_size=BATCH_SIZE,
     shuffle=True,
-    collate_fn=collator
+    collate_fn=collator,
+    drop_last=True
 )
 valid_dl = DataLoader(
-    valid_ds
+    valid_ds,
+    collate_fn=collator
 )
 test_dl = DataLoader(
-    test_ds
+    test_ds,
+    collate_fn=collator
 )
 
 # %%
-for x, y in train_dl:
+for x, mask, y in train_dl:
     break
 
-x.shape, y.shape, x.dtype
+x.shape, mask.shape, y.shape, x.dtype
 
 # %%
 model = DeepStoppingModel(
