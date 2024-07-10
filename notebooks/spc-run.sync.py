@@ -137,6 +137,7 @@ for dir in os.listdir('../data'):
                 nm: chart
             }
         )
+        print(nm, chart.lcl, chart.center_line, chart.ucl)
 
     test_matches = {}
 
@@ -211,4 +212,8 @@ for dir in os.listdir('../data'):
         sep='\t',
         header=True,
         index=False
+    )
+    pickle.dump(
+        charts,
+        open(os.path.join('../results/spc',dir,'charts.pkl'), 'wb')
     )
