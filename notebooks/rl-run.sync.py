@@ -99,7 +99,7 @@ for dir in os.listdir('../data'):
     hid_dim = 0
     for i in range(10):
         if 2**i > len(FEATURE_COLS):
-            hid_dim = 2**(i-1) * 2
+            hid_dim = 2**i
             break
     print('Features: ', len(FEATURE_COLS))
     print('Hidden Dim: ',hid_dim)
@@ -108,16 +108,16 @@ for dir in os.listdir('../data'):
         hid_dim=hid_dim,
         save_dir=os.path.join('../results/rl',dir),
         n_actions=2,
-        n_sim=55,
+        n_sim=100,
         lr=1e-4,
         weight_decay=0.01,
         gamma=0.99,
-        bsz=64,
+        bsz=128,
         device='cpu'
     )
 
     # Train
-    epochs = 20
+    epochs = 30
     train_actions, train_rewards = alpha_stop.train(epochs, train_env, valid_env)
 
     # Load and test best model
@@ -126,7 +126,7 @@ for dir in os.listdir('../data'):
             os.path.join('../results/rl',dir,'network.pt')
         )
     )
-    alpha_stop.mcts = pickle.load(open(os.path.join('../results/rl',dir,'mcts.pkl'),)'rb')
+    alpha_stop.mcts = pickle.load(open(os.path.join('../results/rl',dir,'mcts.pkl'),'rb'))
     test_actions, test_rewards = alpha_stop.run(test_env)
     
     # Save output

@@ -158,6 +158,12 @@ class NeuralNetGuidedMCTS:
             self.net.parameters(),
             lr=lr
         )
+        self.scheduler = optim.lr_scheduler.CosineAnnealingLR(
+            self.optimizer,
+            eta_min=1e-6,
+            T_max = 60000,
+            last_epoch=-1
+        )
         self.mcts = MonteCarloTreeSearch(
             self.net,
             n_sim=n_sim,
@@ -236,9 +242,10 @@ class NeuralNetGuidedMCTS:
                 daily_rewards[train_env.current_date].append(reward)
                 pbar.update(1)
 
-                if day_done or done:
-                    self.learn()
+                if day_done or done or (train_env.current_time % 4 == 0):
+                    print('learning')
             
+            self.scheduler.step()
             epoch_actions.update(
                 {epoch: actions}
             )
@@ -268,7 +275,8 @@ class NeuralNetGuidedMCTS:
             pbar.set_postfix(
                 {
                     'Mean Daily Train Reward': np.array([r for dr in daily_rewards.values() for r in dr]).mean(),
-                    'Best Mean Daily Valid Reward': best_rewards 
+                    'Best Mean Daily Valid Reward': best_rewards,
+                    'LR': self.scheduler.get_last_lr()
                 }
             )
         return actions, daily_rewards
