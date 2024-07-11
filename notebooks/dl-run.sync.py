@@ -17,26 +17,29 @@ import os
 import pickle
 import random
 import datetime
+import warnings
 from string import Template
 from collections import namedtuple
 
-import matplotlib.pyplot as plt
-import seaborn as sns
+from tqdm.auto import tqdm
 
 import numpy as np
 import pandas as pd
+
+from sklearn.metrics import classification_report
+
 import torch
 from torch import nn
 from torch.utils.data import Dataset, DataLoader
-
-from momentfm import MOMENTPipeline
 
 import sys
 sys.path.insert(0, '..')
 from src.data import TimeSeries
 from src.methods.deep import (
     DeepStoppingModel,
-    TimeSeriesDataset
+    TimeSeriesDataset,
+    DLDataset,
+    collator
 )
 from src.eval import (
     mean_time_from_event,
@@ -49,11 +52,12 @@ random.seed(SEED)
 np.random.seed(SEED)
 torch.manual_seed(SEED)
 
-BATCH_SIZE = 4
+BATCH_SIZE = 8
+
+warnings.filterwarnings('ignore',category=UserWarning)
 
 # %%
-def get_time_windows(df, window={'minutes': 20}):
-    tf = '%Y-%m-%d %H:%M:%S.%f'
+def get_time_windows(df, tf, window={'minutes': 20}):
     windows = []
     window_size = datetime.timedelta(**window)
     df.reset_index(drop=True, inplace=True)
@@ -127,14 +131,14 @@ for dir in os.listdir('../data'):
     if not os.path.isfile(os.path.join(save_dir, 'X_train.pkl')):
         print('Making datasets...')
         train_windows = {
-            dt: get_time_windows(ts) for dt, ts in train_ts.time_series.items()
+            dt: get_time_windows(ts, tf) for dt, ts in train_ts.time_series.items()
         }
 
         valid_windows = {
-            dt: get_time_windows(ts) for dt, ts in valid_ts.time_series.items()
+            dt: get_time_windows(ts, tf) for dt, ts in valid_ts.time_series.items()
         }
         test_windows = {
-            dt: get_time_windows(ts) for dt, ts in test_ts.time_series.items()
+            dt: get_time_windows(ts, tf) for dt, ts in test_ts.time_series.items()
         }
 
         X_train = [
@@ -202,12 +206,12 @@ for dir in os.listdir('../data'):
         'transformer',
         len(FEATURE_COLS),
         device='cuda',
-        save_dir=os.path.join('../results',dir,'transformer.pt'),
+        save_dir=os.path.join('../results/deep',dir,'transformer.pt'),
         bsz=BATCH_SIZE
     )
 
     # Loss weighting to manage class imbalance
-    pw1 = np.mean(train_ds.y)
+    pw1 = np.mean(train_ds.y)**2
     pw0 = 1-pw1
     pw0,pw1
     weights = torch.tensor([1/pw0,1/pw1])
@@ -222,25 +226,45 @@ for dir in os.listdir('../data'):
         class_weight=weights,
         lr=1e-3,
         eta_min=1e-6,
-        weight_decay=0.01
+        weight_decay=0.1,
+#        debug=True
     )
 
     # Load and test best model
-    model.load_state_dict(os.path.join('../results',dir,'transformer.pt'))
-    model.eval()
+    model.load_state_dict(
+        torch.load(
+            os.path.join('../results/deep',dir,'transformer.pt')
+        )
+   )
     preds = {}
     test_windows = {
-        dt: get_time_windows(ts) for dt, ts in test_ts.time_series.items()
+        dt: get_time_windows(ts, tf) for dt, ts in test_ts.time_series.items()
     }
+    all_preds = []
+    all_labels = []
     with torch.no_grad():
-        for dt, windows in test_windows.items():
+        for dt, windows in tqdm(test_windows.items()):
             preds.update({dt:[]})
             for window, l in windows:
-                X = torch.tensor(window[FEATURE_COLS].values, dtype=torch.float32, device=model.device)
-                y = torch.tensor(l, dtype=torch.long, device=model.device)
-                X, mask, y = collator((X, y))
+                all_labels.append(l)
+                n = len(window)
+                mask = torch.cat([
+                    torch.ones(n),torch.zeros(512-n)
+                ]).unsqueeze(0)
+                X = torch.cat([
+                    torch.tensor(window[FEATURE_COLS].values),
+                    torch.zeros(512-n,len(FEATURE_COLS))
+                ]).unsqueeze(0).permute(0,2,1).to(dtype=torch.float32, device=model.device)
+                y = torch.tensor([l], dtype=torch.long, device=model.device)
                 mask = mask.to(model.device)
+                pred, _ = model.predict(X, None, mask=mask, infer=True)
+                all_preds.append(pred.cpu().item())
+                preds[dt].append(pred.cpu().item())
 
-                pred = 
-                window_pred = 
-            
+    # Save predictions
+    pickle.dump(
+        preds,
+        open(os.path.join('../results/deep', dir, 'preds.pkl'), 'wb')
+    )
+
+    print(classification_report(all_labels, all_preds, zero_division=0.0))

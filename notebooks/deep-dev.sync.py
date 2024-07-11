@@ -209,7 +209,7 @@ model = DeepStoppingModel(
 )
 
 # %%
-pw1 = np.mean(train_ds.y)
+pw1 = np.mean(train_ds.y)**2
 pw0 = 1-pw1
 pw0,pw1
 weights = torch.tensor([1/pw0,1/pw1])
@@ -225,5 +225,5 @@ model.train(
     class_weight=weights,
     lr=1e-3,
     eta_min=1e-6,
-    weight_decay=0.01
+    weight_decay=0.1
 )

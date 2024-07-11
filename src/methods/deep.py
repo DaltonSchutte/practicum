@@ -142,8 +142,8 @@ class DeepStoppingModel(nn.Module):
             output, hc = self.model(x, hc)
         return output, hc
 
-    def predict(self, x, hc):
-        x, hc1 = self.forward(x, hc)
+    def predict(self, x, hc, mask, infer=True):
+        x, hc1 = self.forward(x, hc, mask, infer)
         preds = x.softmax(1).argmax(1)
         return (preds, hc1)
 
@@ -278,12 +278,12 @@ class DeepStoppingModel(nn.Module):
             logits, hc = self.forward(inputs, hc, masks)
             loss = criterion(logits, labels)
 
+            loss.backward()
+            optimizer.step()
+
             self.train_losses.append(
                 loss.cpu().detach().item()
             )
-
-            loss.backward()
-            optimizer.step()
 
             if self.use_pbar:
                 self.pbar.set_postfix(
@@ -346,7 +346,7 @@ class DeepStoppingModel(nn.Module):
 
             if loss < self.best_loss:
                 torch.save(
-                    self.model,
+                    self.state_dict(),
                     self.save_dir
                 )
                 self.best_loss = loss
