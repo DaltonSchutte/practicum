@@ -42,8 +42,7 @@ from src.methods.deep import (
     collator
 )
 from src.eval import (
-    mean_time_from_event,
-    classification_metrics
+    mean_time_from_event, classification_metrics
 )
 
 # %%
@@ -67,7 +66,8 @@ def get_time_windows(df, tf, window={'minutes': 20}):
             end_t = datetime.datetime.strptime(row2['timestamp'], tf)
             if end_t - start_t >= window_size:
                 try:
-                    label = df['PW_0.5h'].iloc[j+1]
+                    # label = df['PW_0.5h'].iloc[j+1]
+                    label = df['PW_0.5h'].iloc[j]
                 except IndexError:
                     label = df['PW_0.5h'].iloc[-1]
                 except err:
@@ -77,6 +77,10 @@ def get_time_windows(df, tf, window={'minutes': 20}):
                 )
                 break
     return windows
+
+
+def normalizer(x, max_, min_, mean_):
+    return (x-mean_) / (max_-min_)
 
 # %%
 for dir in os.listdir('../data'):
@@ -108,7 +112,7 @@ for dir in os.listdir('../data'):
     train_ts.parse_datetime('timestamp', tf)
     valid_ts.parse_datetime('timestamp', tf)
     test_ts.parse_datetime('timestamp', tf)
-
+    
     train_ts.split_by_day()
     valid_ts.split_by_day()
     test_ts.split_by_day()
@@ -126,10 +130,21 @@ for dir in os.listdir('../data'):
 
     temp = None
     del temp
+    
+    # Normalize to [-1,1]
+    X_train_max = train_ts.data[FEATURE_COLS].max()
+    X_train_min = train_ts.data[FEATURE_COLS].min()
+    X_train_mean = train_ts.data[FEATURE_COLS].mean()
 
     save_dir = os.path.join('../data',dir,'preprocessed')
     if not os.path.isfile(os.path.join(save_dir, 'X_train.pkl')):
         print('Making datasets...')
+
+        for dset in [train_ts, valid_ts, test_ts]:
+            for dt, ts in dset.time_series.items():
+                ts.loc[:,FEATURE_COLS] = normalizer(ts.loc[:,FEATURE_COLS], X_train_max,X_train_min,X_train_mean)
+                dset.time_series.update({dt:ts})
+
         train_windows = {
             dt: get_time_windows(ts, tf) for dt, ts in train_ts.time_series.items()
         }
@@ -190,7 +205,8 @@ for dir in os.listdir('../data'):
         train_ds,
         batch_size=BATCH_SIZE,
         shuffle=True,
-        collate_fn=collator
+        collate_fn=collator,
+        drop_last=True
     )
     valid_dl = DataLoader(
         valid_ds,
@@ -211,12 +227,13 @@ for dir in os.listdir('../data'):
     )
 
     # Loss weighting to manage class imbalance
-    pw1 = np.mean(train_ds.y)**2
+    pw1 = np.mean(train_ds.y)
     pw0 = 1-pw1
     pw0,pw1
     weights = torch.tensor([1/pw0,1/pw1])
     weights /= weights.sum()
     weights
+    print(weights)
 
     # Train
     model.train(
@@ -266,5 +283,4 @@ for dir in os.listdir('../data'):
         preds,
         open(os.path.join('../results/deep', dir, 'preds.pkl'), 'wb')
     )
-
-    print(classification_report(all_labels, all_preds, zero_division=0.0))
+print(classification_report(all_labels, all_preds, zero_division=0.0))

@@ -136,7 +136,7 @@ class DeepStoppingModel(nn.Module):
             )
             out = torch.mean(out, dim=1)
             out = self.dropout(out)
-            output = self.linear(out)
+            output = self.linear(out).softmax(1)
 
         elif self.model_type == 'lstm':
             output, hc = self.model(x, hc)
@@ -226,7 +226,8 @@ class DeepStoppingModel(nn.Module):
             eta_min=eta_min
         )
         criterion = nn.CrossEntropyLoss(
-            weight=class_weight.float()
+            weight=class_weight.float(),
+            reduction='sum'
         )
 
         self.use_pbar = use_pbar
@@ -242,6 +243,7 @@ class DeepStoppingModel(nn.Module):
                 optimizer,
                 criterion,
                 hc,
+                scheduler,
                 debug
             )
             scheduler.step()
@@ -264,11 +266,13 @@ class DeepStoppingModel(nn.Module):
         optimizer,
         criterion,
         hc=None,
+        scheduler=None,
         debug=False
     ):
         self.model.train()
         criterion.to(self.device)
-        for batch in tqdm(training_data, total=len(training_data)):
+        pbar = tqdm(total=len(training_data))
+        for batch in training_data :
             inputs, masks, labels = batch
             inputs = inputs.to(self.device)
             masks = masks.to(self.device)
@@ -286,12 +290,14 @@ class DeepStoppingModel(nn.Module):
             )
 
             if self.use_pbar:
-                self.pbar.set_postfix(
-                    {
-                        'Loss': np.mean(self.train_losses[-100:]),
-                        'F1': self._f1
-                    }
+                self.pbar.set_postfix_str(
+                    (
+                        f'Loss: {np.mean(self.train_losses[-100:]).round(6)}\n'
+                        f'F1: {self._f1}\n'
+                        f'LR: {scheduler.get_last_lr()}'
+                    )
                 )
+                pbar.update(1)
             if debug:
                 break
 

@@ -104,7 +104,8 @@ def get_time_windows(df, window={'minutes': 20}):
             end_t = datetime.datetime.strptime(row2['timestamp'], tf)
             if end_t - start_t >= window_size:
                 try:
-                    label = df['PW_0.5h'].iloc[j+1]
+                    # label = df['PW_0.5h'].iloc[j]
+                    label = df['PW_0.5h'].iloc[j]
                 except IndexError:
                     label = df['PW_0.5h'].iloc[-1]
                 except err:

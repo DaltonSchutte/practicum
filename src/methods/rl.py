@@ -48,6 +48,39 @@ class MCTSNetwork(nn.Module):
 
         return policy, value
 
+    
+class MCTSRecurrentNetwork(nn.Module):
+    def __init__(self, in_dim, hid_dim, n_actions=2, device='cpu'):
+        self.lstm = nn.LSTM(
+            input_size=in_dim,
+            hidden_size=hid_dim,
+            num_layes=1,
+            batch_first=True
+            dropout=0.1,
+            bidirectional=False
+        )
+        self.relu1 = nn.ReLU()
+        self.linear = nn.Linear(hid_dim, hid_dim)
+        self.relu2 = nn.ReLU()
+
+        # Policy
+        self.policy_head = nn.Linear(hid_dim, n_actions)
+        self.softmax = nn.Softmax(dim=1)
+
+        # Value
+        self.value_head = nn.Linear(hid_dim,1)
+        self.tanh = nn.Tanh()
+
+        self.device = device
+
+    def forward(self, state):
+        x = self.relu1(self.lstm(state))
+        x = self.relu2(self.linear(state))
+        policy = self.softmax(self.policy_head(x))
+        value = self.tanh(self.value_head(x))
+
+        return policy, value
+
 
 class Node:
     def __init__(self, state, parent=None, prior=0.0, depth:int=0):
