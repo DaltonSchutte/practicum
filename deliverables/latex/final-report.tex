@@ -741,9 +741,11 @@ MCTS & \begin{tabular}[c]{@{}c@{}}Blood\\ Refrigerator\end{tabular} & -7.78     
 PPO  & \begin{tabular}[c]{@{}c@{}}Blood\\ Refrigerator\end{tabular} & -0.03                  & -9   & 0.91      & 0.59   & 0.71 \\
      & \begin{tabular}[c]{@{}c@{}}Nitrogen\\ Generator\end{tabular} & -1.01                  & -107 & 1.00      & 0.66   & 0.80 \\ \hline
 \end{tabular}
+\caption{Results from evaluating the RL agents on the held out test set for each machine. The mean daily test reward is calculated by determining the total reward for each day then averaging the days together.}
 \end{table}
 
-The reinforcement learning algorithms have very different results. The MCTS didn't perform as strongly as the PPO agent. The PPO
+Table 9 shows the results after training the RL agents. The reinforcement learning algorithms have very different results. 
+The MCTS didn't perform as strongly as the PPO agent. The PPO
 agent had the lowest MTFE that was before the first failure label in the time series for each day. The RL algorithms were trained
 on a single NVIDIA L4 Tensor Core GPU with 16GB memory and 4 vCPUs. 
 
