@@ -732,10 +732,23 @@ Since we were unable to obtain a tuned model, we will not report results for thi
 
 \subsection{Reinforcement Learning}
 
+\begin{table}[]
+\begin{tabular}{|cc|ccccc|}
+    \hline
+     &                                                              & Mean Daily Test Reward & MTFE & Precision & Recall & F1   \\ \hline
+MCTS & \begin{tabular}[c]{@{}c@{}}Blood\\ Refrigerator\end{tabular} & -7.78                  & -391 & 0.47      & 0.41   & 0.44 \\
+     & \begin{tabular}[c]{@{}c@{}}Nitrogen\\ Generator\end{tabular} & -10                    & -735 & 0.00      & 0.00   & 0.00 \\ \hline
+PPO  & \begin{tabular}[c]{@{}c@{}}Blood\\ Refrigerator\end{tabular} & -0.03                  & -9   & 0.91      & 0.59   & 0.71 \\
+     & \begin{tabular}[c]{@{}c@{}}Nitrogen\\ Generator\end{tabular} & -1.01                  & -107 & 1.00      & 0.66   & 0.80 \\ \hline
+\end{tabular}
+\end{table}
 
+The reinforcement learning algorithms have very different results. The MCTS didn't perform as strongly as the PPO agent. The PPO
+agent had the lowest MTFE that was before the first failure label in the time series for each day. The RL algorithms were trained
+on a single NVIDIA L4 Tensor Core GPU with 16GB memory and 4 vCPUs. 
 
 \clearpage
-\section{Discussion}
+\section{Discussion}\label{disc}
 
 \subsection{Findings}
 
