@@ -1,0 +1,493 @@
+\documentclass[12pt]{article}
+\setlength{\oddsidemargin}{27mm}
+\setlength{\evensidemargin}{27mm}
+\setlength{\hoffset}{-1in}
+
+\setlength{\topmargin}{27mm}
+\setlength{\voffset}{-1in}
+\setlength{\headheight}{0pt}
+\setlength{\headsep}{0pt}
+
+\setlength{\textheight}{235mm}
+\setlength{\textwidth}{155mm}
+
+%\pagestyle{empty}
+\pagestyle{plain}
+
+\renewcommand{\thefootnote}{\fnsymbol{footnote}}
+\renewcommand{\labelitemi}{$\diamond$}
+
+\usepackage{cite}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage{graphicx}
+%\usepackage{algpseudocode}
+
+\begin{document}
+\baselineskip 12pt
+
+\begin{center}
+\textbf{\Large Predicting Machine Failures with Reinforcement Learning}
+
+\vspace{1.5cc}
+{ \sc Dalton Schutte}\\
+
+\vspace{0.3 cm}
+
+{\small Georgia Institute of Technology}
+\end{center}
+\vspace{1.5cc}
+
+
+
+\begin{abstract}
+  \noindent We investigate methods from statistical process control, deep learning, and reinforcement learning
+  for predicting when two machines will fail. Each machine is fitted with sensors that report data at semi-regular
+  intervals for each time step. Our results suggest that ...
+
+\end{abstract}
+
+
+
+\section{Introduction} \label{form}
+
+As time progresses, machines gradually wear down and will fail. When a machine fails,
+it is likely to require maintenance or repair before it can return to its normal function.
+Depending on the application, failure may not be an issue if the process is low-stakes or
+has redundancies or backups or catastrophic if the process is of critical importance. In
+most cases, machine failure may result in lost revenue as production is halted or goods
+are damaged.
+
+Knowing when a machine is likely to fail can reduce the impact on down- and up-stream
+processes by allowing necessary preparations to be taken before the machine is stopped
+for maintenance. This is preferable to the alternative where the failure remains unaddressed
+until it is noticed. This can add to down times and makes preparing for the downtime 
+rushed.
+
+\subsection{Background} \label{back}
+
+\subsubsection{Statistical Process Control}
+
+Statistical Process Control (SPC), or, Statistical Quality Control, is a set or techniques
+that allow one to track the results of a process over time\cite{guthrie_nistsematech_2020}. 
+The general procedure is:
+
+\begin{enumerate}
+    \item Determine which time period will be used for establishing in-control markers
+    \item Gather observations from this period
+    \item Calculate the center line
+    \item Calculate any control limits (such as 2 standard deviations above/below the center line)
+    \item Plot new observations against these limits
+    \item Evaluate any patterns that emerge
+\end{enumerate}
+
+There are different types of charts depending on what observations are available, the nature
+of the process, etc. Typically, a single characteristic is measured (e.g. weight for canned goods,
+length of extruded metal, etc.) per chart for simplicity. Tracking multiple variables is
+complex and requires special methodologies.
+
+\subsubsection{Deep Learning}
+Deep learning is a procedure where deep neural networks are trained on a dataset using an
+optimization algorithm in an iterative manner. There are many flavors of neural network, but
+two that are particularly well suited to sequential data are the Long-Short Term Memory (LSTM)
+network\cite{hochreiter_long_1997} and the transformer\cite{vaswani_attention_2023}.
+
+Transformer-based architectures have been at the forefront of NLP research in recent years. While they have
+demonstrated excellent performance on some generative language tasks, their ability to process long-term
+dependencies in sequential data and the ability to pre-train models once and fine-tune for multiple other tasks
+suggests they could be well suited to applications in time series analysis. Indeed there has been some research
+on this front. Recently Goswami et al.\cite{goswami_moment_2024} collected a large amount of time series data
+to pre-train a family of models called MOMENT. This family of foundational time series models is pre-trained
+on time series from a variety of domains, with varying time horizons, and for various tasks.
+
+\subsubsection{Reinforcement Learning}
+Reinforcement learning (RL) is a special subset of ML/AI focused on choosing actions in some environment\cite{sutton_reinforcement_1998}.
+This process begins with some "agent" that will use some reinforcement learning algorithm to
+interact with an environment which, in turn, provides a reward signal that is used to help
+train the agent. The ultimate goal is for the agent to learn an optimal policy, $\pi$, that
+can be used to choose actions given a state. Perhaps one of the most famous applications of
+reinforcement learning is in games. Many board games, such as Go\cite{silver_mastering_2017},
+have a huge number of discrete game states that one cannot simply find the best play with brute
+forced.
+
+Two of the, perhaps, most well-known techniques are Proximal Policy Optimization (PPO)\cite{Schulman2017ProximalPO} and
+Neural Guided Monte Carlo Tree Search (MCTS)\cite{silver_mastering_2016}. The former was used to train the OpenAI 5, a 
+collection of AI agents trained to play the video game Dota 2\cite{Berner2019Dota2W} and the latter to train AlphaGo,
+which beat the then Go world champion in a set of 4-1.
+
+\subsection{Research Questions}
+The states for many machine sensors are not discrete, but rather, take on values in $\mathbb{R}$.
+The T$^2$ and, most, deep learning models handle this situation without issue. There are plenty
+of RL algorithms that can solve continuous control tasks\cite{Pong2018TemporalDM,Lillicrap2015ContinuousCW}.
+However, we wish to examine the efficacy of RL for stopping machines that are about to fail. We
+will seek to answer the following questions:
+
+\begin{enumerate}
+    \item How well can MCTS and PPO perform at this task?
+    \item How do these algorithms compare to traditional methods from SPC?
+    \item How do these algorithms compare to models, such as MOMENT, designed for sequential data?
+    \item How do the RL methods compare to each other?
+\end{enumerate}
+
+
+\section{Methods} \label{meth}
+\subsection{Data}
+
+We are using data from two machines, a blood refrigerator and a nitrogen generator\cite{pinciroli_vago_predicting_2024}.
+
+A blood refrigerator is a machine designed to store blood safely at proper temperatures. The general composition of a unit
+is the compressor to pump coolant throughout, the condensor to remove heat from the collant and condense it, the
+evaporator which evaporates the coolant to cool the interior of the unit, an expansion valve to regulate the flow of
+coolant, and tubing to move the coolant throughout.
+
+A nitrogen generator is a machine that separates nitrogen from other gases in compressed air. This unit typically includes an
+air compressor, carbon sieves for filtering, absorption vessels to collect nitrogen, and towers to increase production.
+
+\subsubsection{Analysis}
+
+\begin{table}[b]
+    \centering
+\begin{tabular}{l|ll|ll|}
+\cline{2-5}
+                                & \multicolumn{2}{l|}{Blood Refrigerator} & \multicolumn{2}{l|}{Nitrogen Generator} \\
+                                & Train              & Test               & Train              & Test               \\ \hline
+\multicolumn{1}{|l|}{Days}      & 25                 & 27                 & 29                 & 8                  \\
+\multicolumn{1}{|l|}{Timesteps} & 60166              & 65763              & 40354              & 11162              \\
+\multicolumn{1}{|l|}{Stops (1)} & 704                & 642                & 810                & 242                \\ \hline
+\end{tabular}
+\caption{Summary statistics of our datasets}
+\end{table}
+
+The data includes a mix of binary and continuous variables with a binary target variable. The class imbalance is heavily in
+favor of the 'normal' class \text{(PW\_0.5h=0)}, which indicates the machines are operating within expecations the majority of the time,
+a desireable phenomenon. The ratio of normal to failed states is roughly 99:1 for the blood refrigerator and 49:1 for the nitrogen
+generator. In each dataset, there are several days where there is no failure state, meaning the machine operated without issue
+the entire day.
+
+The measurement intervals are spaced roughly 1 minute apart for the nitrogen generator and about 34 seconds for the blood refrigerator.
+The label \text{'PW\_0.5'}, using the notation and convention from the paper
+that provided this dataset\cite{pinciroli_vago_predicting_2024}, represents the Prediction Window \text{(PW)} of 30 minutes \text{(0.5 hours)}.
+This means that in the 30 minute interval beginning at a time stamp $t$, the machine is operating outside of parameters for at least
+one of those time stamps. The other convention from that paper is the Reading Window over some interval. The Reading Window \text{(RW)} is
+the collection of sequential time stamps used as input to a model. In our experiments, for example, we use a RW of 20 minutes where
+we collect the minimum number of sequence of time steps necessary to span 20 minutes of time. In Pinciroli et al.\cite{pinciroli_vago_predicting_2024},
+they explore a wide combination of PW and RW but found that most of their models performed best with a 20 minute RW, which is why
+that is the window size we chose to use.
+
+\begin{figure}
+    \centering
+    \includegraphics[width=16cm]{assets/test/blood-refrigerator/features.png}
+    \caption{Plots of variables around the point of failure for the blood refrigerator. Red regions are where regions where the data label indicates failure (1)}
+    \centering
+    \includegraphics[width=16cm]{assets/test/nitrogen-generator/features.png}
+    \caption{Plots of variables around the point of failure for the nitrogen generator. Red regions are where regions where the data label indicates failure (1)}
+\end{figure}
+
+Figures 1 and 2 show some examples of the time series data in our dataset. Initially, the blood refrigerator dataset had 16 sensors
+providing output and the nitrogen generator had 7. We removed all the output from any sensor whose standard deviation was zero over
+the entire dataset. This left 12 variables for the blood refrigerator and 4 for the nitrogen generator.
+
+The time series for the features in the blood refrigerator (figure 1) highlight that there is, intuitively, some change occurring
+in the machine that is leading to these sensor readings. Particularly, the product temperature base, evaporator temperature, and power
+supply have noticeably different patterns in the red failure region than in the period before.
+
+The nitrogen generator (figure 2) shows an instance where the failure happens early in the observation period, only a few time steps
+into the beginning of the period. This poses a challenge for the methods as there is very little data for them to work from before having
+to determine if the machine is on a trajectory to failing. However, this may be the case in real operating conditions and so is an
+important case to keep in our dataset.
+
+\paragraph{Correlations}
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=16cm]{assets/test/blood-refrigerator/correlations.png}
+    \caption{Correlation between variables in the blood refrigerator dataset splits. The label column is 'PW\_0.5h'.}
+    \centering
+    \includegraphics[width=16cm]{assets/test/nitrogen-generator/correlations.png}
+    \caption{Correlation between variables in the nitrogen generator dataset splits. The label column is 'PW\_0.5h'.}
+\end{figure}
+
+Upon examination of the correlations, shown in figures 3 and 4, between variables for each dataset, there were no instances where any one variable
+was significantly correlated with the target variable, 'PW\_0.5h'. We felt no need to drop additional features based
+on these observations.
+
+\paragraph{Feature Distributions}
+
+\begin{figure}
+    \centering
+    \includegraphics[height=7cm]{assets/test/blood-refrigerator/feature-distributions.png}
+    \caption{Distribution of normalized, continuous variables for the blood refrigerator dataset splits.}
+    \centering
+    \includegraphics[height=7cm]{assets/test/nitrogen-generator/feature-distributions.png}
+    \caption{Distribution of normalized, continuous variables for the nitrogen generator dataset splits.}
+\end{figure}
+
+Figures 5 and 6 show the distributions of the continuous variables for both machines. The blood refrigerator has, good representation
+of most variables in the training set that appear in the validation and test splits.
+ 
+For additional detailed discussion and analysis of the datasets, the reader is referred to \cite{pinciroli_vago_predicting_2024}.
+
+\subsubsection{Processing}
+Pre-processing of the data was kept fairly minimal. As mentioned above, we decided to drop any columns with zero variance as these
+would not contribute any meaningful signal for any of our methods to learn from. This resulted in 12 columns for the blood refrigerator data
+and 4 columns for the nitrogen generator data. The remaining continuous variables were normalized with:
+
+\begin{equation}
+    \hat{x_{it}}=\frac{x_{it}-\bar{x_{i}}}{\max{x_i}-\min{x_i}}
+\end{equation}
+
+for variable $i$ at time $t$.
+
+
+\subsection{Models}
+\subsubsection{T$^2$ Control Chart}
+One method from SPC that is commonly used is the T$^{2}$-Control Chart with Upper Control Limit (UCL). Given a set of $n$
+correlated characteristics $X_i$, assumed to follow a multivariate-normal distribution, the T$^{2}$
+statistic is:
+
+\begin{equation}
+    T^{2} = m (\bar{x}-\mu)\Sigma^{-1}(\bar{x}-\mu)
+\end{equation}
+
+Where $m$ is the number of samples in the subgroup ($m=1$ is referred to as individual control charts),
+$\bar{x}$ is the mean of a sample of $m$ vectors of measurements, $\Sigma$ is the covariance matrix (assuming it is known), and
+$\mu$ is the in-control process mean (assuming it is known)\cite{lawson_introduction_2021}. For simplicity,
+it should be assumed that all discussion is with regards to individual T$^2$-control charts unless otherwise
+stated.
+
+The UCL is $\chi^2$ distributed and is calculated at $\frac{\alpha}{2}$. In practice,
+
+\begin{equation}
+    \text{UCL}_{\frac{\alpha}{2}} = \frac{(k-1)^2}{k}f \left( 1-\frac{\alpha}{2};\frac{p}{2},\frac{(k-p-1)}{2}\right)
+\end{equation}
+
+where $f$ is the beta distribution. The Lower Control Limit (LCL)
+is set to zero.
+
+It is often the case that $\Sigma$ and $\mu$ are not known. These can be estimated from
+the sample by:
+
+\begin{equation}
+    \mu \approx \hat{\mu} = \frac{1}{k} \sum_{i=1}^k \hat{x}_i
+\end{equation}
+
+where $\hat{x}_i$ are the observations from the in-control process sample, and
+
+\begin{equation}
+    \Sigma \approx \hat{\Sigma} = 
+    \begin{bmatrix}
+        \hat{\sigma}^2_{11} & \dots & \hat{\sigma}^2_{1n} \\
+        \vdots & \ddots & \vdots \\
+        \hat{\sigma}^2_{n1} & \dots & \hat{\sigma}^2_{nn}
+    \end{bmatrix}
+\end{equation}
+
+where $\hat{\sigma}^2_{ij}$ is the variance between characteristics $X_i$ and $X_j$ from the 
+in-control process sample.
+
+To plot the $i^{th}$ point on the individual chart, $(1)$ becomes:
+
+\begin{equation}
+    T_i^{2} = (x_i-\hat{\mu})\hat{\Sigma}^{-1}(x_i-\hat{\mu})
+\end{equation}
+
+As new observations are made and new points added to the plot various signals may arise.
+Perhaps the most apparent is a breach of the UCL (a new point with a T$^2$-statistic $>$ UCL).
+This could suggest that something unusual happened with that single instance. There are many
+other patterns that may arise. A continuous streak of 3-5 points beyond the 2 standard deviation
+mark, 7 or more beyond 1 standard deviation, 8-9 points alternating sides of the center line in
+a zig-zag pattern. All of these suggest different things about the underlying process and that
+either the process should be investigated or a new in-control sample taken to establish
+new charts.
+
+We will be using the above technique largely as-is because it is a standard methodology and has
+demonstrated itself to be very effective. We will use the last 25\%, 50\%, 75\%, and all
+of the training data to establish the control parameters. This will allow us to evaluate the
+effects of recency on the results. To determine when a "stop" signal should be raise, we have
+defined two patterns that accept a variety of parameters. When the conditions specified by the
+patterns are met, a 1 ("stop") is returned. Because this method is not trained in an iterative
+manner, we do not train or evaluate using the validation time series.
+
+During the experiments, we found that the performance when using the training data to construct
+control charts for the test data yielded very poor results. So we included a set of results where
+the control limits are set using the first 150 or 70 time steps for the blood refrigerator and nitrogen
+generator, respectively, for each day in the test set. In other words, the control chart for a given day
+would be determined based on the the sensor readings during the first part of its normal operation for a day.
+
+The patterns we use are "n sequential breaches of the UCL or LCL" and "n total breaches of the UCL or LCL in a
+window of length t". For the former case, if we raise a stop signal at the first instance of any window where all 
+$n$ observations are above or below (including a mix of above and below) the control limits. For the latter, we 
+raise a stop signal at the first instance of a window of $t$ time steps there are $n$ breaches above or below
+the control limits.
+
+
+\subsubsection{Transformer}
+
+The transformer is an architecture with several components: a tokenizer, an embedding layer,
+transformer layers, a task-specific head\cite{vaswani_attention_2023}. The transformer layer
+is a collection of alternating multi-head attention layers and linear feed forward layers.
+These models are often pre-trained on large collections of text as foundation models then
+fine-tuned for specific tasks by adding a task-specific head that converts the representation
+from the last hidden layer of the transformer body into a useable output. It is possible to
+train transformers on more than just text. Many variations exist that operate on video, audio,
+time series, and combinations of the above (multi-modal).
+
+A family of open-source foundational time series transformer models was recently released\cite{goswami_moment_2024}
+that has been pre-trained on a rich collection of time series data and can be fine-tuned for
+specific tasks such as anomaly detection or classification. The models (MOMENT) were pre-trained
+with univariate time series data with a variety of time horizons. When given multivariate
+time series data, each variable is treated separately in its own channel.
+
+The specific model we will be using has an architecture similar to the T5 encoder\cite{Raffel2019ExploringTL}
+and has approximately 385MM parameters. We will be fine-tuning a freshly initialized linear
+layer to perform the classification task.
+
+For this model, we will extract rolling windows comprising 20 minutes (determined using the time stamps 
+provided in the data) as the input sequence and the label for the time step immediately after the end of the
+window as the target for learning. MOMENT requires all input sequences are 512 tokens in length, so
+all inputs will be padded with zeros to meet the length requirement and masks will be generated
+so the loss is calculated only from features related to the input sequence. We chose 20 minutes since
+previous research found that was the window where the models typically performed best\cite{pinciroli_vago_predicting_2024}.
+
+MOMENT will be fine tuned using the Adam optimizer\cite{Kingma2014AdamAM} with a learning rate of 0.001
+that uses a cosine annealing schedule to a minimum of $10^{-6}$ for binary classification. Weight decay
+is 0.1 and $\beta_1, \beta_2$ are 0.9 and 0.999, respectively. We use a batch size of 8. Fine-tuning is carried out over 5 epochs 
+and the model is checkpointed at the end of each epoch if the validation loss decreased. Due to the high 
+degree of class imbalance, we use normalized class weights in the loss function equal to:
+
+\begin{equation}
+    [w_0,w_1] = [1/p_0, 1/p_1] * (1/p_0+1/p_1)^{-1}
+\end{equation}
+
+
+\subsubsection{Reinforcement Learning}
+Reinforcement learning is defined in the context of solving a Markov Decision Process (MDP). An MDP is a tuple
+$(\mathcal{S},\mathcal{A},\mathcal{R},\mathbb{P})$ with a state space, action space, reward function, and
+a probability to transition from state to state given an action. A state in the state space $s_i\in \mathcal{S}$
+is a representation of the environment at time $i$. In our case, each $s$ is a vector in $\mathbb{R}^n$.
+The action space is comprised only of {"Do nothing", "Stop"}, or, ${0,1}=\mathcal{A}$. Our reward function
+is defined so that the agent receives a positive reward if it returns 0 while the label is still 0 or 1
+when the label is 1. The agent will receive a negative reward if it returns a 1 when the label is 0 and
+vice-versa. There is an additional penalty that is incurred for each time step that passes where the agent
+has not stopped the machine (returned a 0) but the label is 1, specifically:
+
+\[ \mathcal{R(s,a)} =
+    \begin{cases}
+        a=1 \land \text{PW\_0.5h}=1       &\to +1 \\
+        a=1 \land \text{PW\_0.5h}=0       &\to -10 \\
+        a=0 \land \text{PW\_0.5h}=1       &\to \sum_{i=0}^k i \text{ where $k$ is the time since the first stop signal} \\
+        a=0 \land \text{PW\_0.5h}=0       &\to +0.01
+    \end{cases}
+\]
+
+where PW\_0.5h$={0,1}$ indicates the label and $a$ the action chosen by the agent at that step. The transition probabilities
+are defined by the temporal sequencing naturally present in the dataset and is deterministic in nature.
+
+However, we observed extremely brittle policies by leaving the time series for each day in temporal order. So, we
+shuffle all of the days during each episode to prevent the agent from trying to learn dependencies day-to-day. While
+there is an argument to be made for the importance of day-to-day patterns, that is a problem that warrants its own
+paper. For simplicity, we will proceed only trying to have the agents learn how to act within each day.
+
+\paragraph{Monte Carlo Tree Search}
+The Monte Carlo Tree Search (MCTS) with neural guidance stores information in a tree structure with states as nodes
+and actions connecting from that node to the next state that it transitioned to as a result of that action. It
+gathers a number of paths by running simulations down the tree by selecting the action at each node that leads to
+the node with the largest expected value, starting at the root, and propagating values back up
+through the path based on a combination of the expected value for that state and the number of visits to that node
+over the simulations. Some randomness is used to ensure some exploration can occur to increase the likelihood that
+the algorithm will find the optimal policy.
+
+The MCTS algorithm has 4 steps:
+\begin{enumerate}
+    \item Starting from the root, select child nodes until a leaf node is reached
+    \item If the leaf node is not a state that is equal to the process being stopped, create child nodes for each
+        possible action
+    \item Perform a simulation by collecting paths from moving down the tree
+    \item Pass the result from this simulation (rollout) up through all nodes in their respective paths
+\end{enumerate}
+Step 3 can be done randomly or with some sort of direction. This can be as simple as a greedy search (select the
+child node with the largest reward) or can use a more complex method such as a neural network\cite{silver_mastering_2017,silver_mastering_2016}.
+The neural network takes the position in the tree and returns a vector of probabilities to select each action
+(the policy). These policy vectors are proportional to the exponential of the visit count for each node (i.e. 
+$\pi\propto N(s,a)^{1/\tau}$, where $N$ is the visit count and $\tau$ a scaling value). The
+neural network has two heads, one to return a policy and one to return a value for the node. Training is done
+by minimizing the cross entropy loss between the policy and the actions yielding the highest reward, plus, the
+mean squared error of the value of the current node and the discounted expectation of future returns. The ideal
+situation is for the network to learn to correctly choose an action that will keep moving the agent towards
+high-value states that yield, in aggregate, the largest cumulative reward.
+
+We explored this method due to the unique nature of the policy optimization process and believed that it would
+provide an interesting and challenging implementation.
+
+The network is trained using the Adam optimizer\cite{Kingma2014AdamAM} with an initial learning rate of 0.0001
+and uses cosine annealing to a minimum of $10^{-6}$. Weight decay is set to 0.01 and $\beta_1,\beta_2$ are 0.9
+and 0.999, respectively. The discount factor for future rewards is $\gamma=0.99$. At the end of each time series
+for a day, end of an episode, or every 4$^{th}$ time step, a "learning" process is triggered. The process begins
+by collecting 100 simulations (paths) from the current tree using the current network. The agent samples
+128 tuples from the 10,000 most recent experiences $\left(s_t, a_t, r_t, s_{t+1}\right)$ to train the network. Each epoch
+is considered complete when the agent has progressed through all of the days' time series in the training set.
+We train the agent for 30 epochs and use early stopping if there is no improvement in the mean reward on the
+validation set after 5 epochs.
+
+\paragraph{Proximal Policy Optimization}
+The proximal policy optimization (PPO)\cite{Schulman2017ProximalPO} is an extention of their earlier trust-region policy
+optimization algorithm\cite{Schulman2015TrustRP}. The agent uses both a neural network to learn a policy, that is sampled
+from using a categorical distribution, to determine what action to take in a given state and a separate network to learn
+the expected value of a given state. We sample from a distribuition determined by the policy to allow some amount of exploration
+to persist during training. This can help reduce the likelihood an agent gets stuck in a locally optimal policy and unable to 
+find the globally optimal policy. The PPO algorithm contains some simplifications and improves the sample
+efficiency by using multiple policy updates per episode (or epoch). During each episode, the policy and value networks are
+updated $k$ times, each time using a different minibatch of recent experiences stored in the agent's memory.
+
+We choose to explore this algorithm since it has demonstrated excellent performance in a variety of continuous state spaces.
+
+\subsection{Evaluation}
+The trained model or agent is used to generate predictions on the held-out test set. We collect the recall, precision, and 
+F$_1$ (in both strict and relaxed settings) as well as the mean-time-from-event (MTFE). The MTFE measures the mean mistiming
+of the method, mathematically:
+
+\begin{equation}
+    MTFE = \frac{1}{K}\sum_k (t_km-t_ke)
+\end{equation}
+
+The strict version of the classification metrics is determined where the model or agent returns the stop signal only on the
+very first occurence of the stop signal in that time series or, in the case where a time series does not stop, if the agent
+never raises the stop signal. The relaxed variation considers any stop signal returned by the model at any stop label
+in the time series as correct.
+
+The precision, recall, and F$_1$ are calculated in the usual manner. The only difference arises in the use of strict or 
+lenient evaluation protocols.
+
+Each method is trained on the training split then evaluated on the held-out test split. The control chart and transformer
+return predictions for each time step while the RL agents stop making predictions for a given day until they return a stop
+action or reached the end of the day's time series. The predictions are calculated on a per-day basis for each test split (
+e.g. the 27 days for the blood refrigerator test set are each given a single prediction).
+
+
+\section{Results}
+
+\subsection{T$^2$ Control Charts}
+
+\subsection{Transformer}
+
+\subsection{Reinforcement Learning}
+
+\section{Discussion}
+
+\subsection{Findings}
+
+\subsection{Limitations}
+
+\subsection{Future Work}
+
+
+
+\section{Conclusion} \label{conc}
+
+
+
+\bibliography{practicum}{}
+\bibliographystyle{unsrt}
+
+\end{document}
