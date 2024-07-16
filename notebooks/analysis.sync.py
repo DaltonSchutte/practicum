@@ -111,14 +111,20 @@ for nm, dset in data.items():
     ]
     X = tmp[FEATURE_COLS]  # DataFrame
     y = tmp[LABEL_COL]
-
+    NONBINARY_FEATURE_COLS = [
+            c for c in FEATURE_COLS if not (X[c].max()==1 and X[c].min()==0 )
+        ]
+    print(BINARY_FEATURE_COLS)
+    BINARY_FEATURE_COLS = [c for c in FEATURE_COLS if c not in NONBINARY_FEATURE_COLS]
+    binary_feats = X[[c for c in FEATURE_COLS if c not in NONBINARY_FEATURE_COLS]]
     # Normalize
-    x_max = X[FEATURE_COLS].max()
-    x_min = X[FEATURE_COLS].min()
-    x_mean = X[FEATURE_COLS].mean()
+    x_max = X[NONBINARY_FEATURE_COLS].max()
+    x_min = X[NONBINARY_FEATURE_COLS].min()
+    x_mean = X[NONBINARY_FEATURE_COLS].mean()
 
-    X = (X[FEATURE_COLS]-x_mean) / (x_max-x_min)
+    X = (X[NONBINARY_FEATURE_COLS]-x_mean) / (x_max-x_min)
     X.loc[:,'tmp'] = tmp.loc[:,'timestamp'].apply(lambda x: x.split(' ')[-1])
+    X.loc[:,BINARY_FEATURE_COLS] = binary_feats
 
     window_st = max(y[y==1].index[0]-50, 0)
     window_end = y[y==1].index[-1]
@@ -177,23 +183,69 @@ for nm, dset in data.items():
     # Drop cols
     FEATURE_COLS = dset['feats']
     LABEL_COL = dset['label']
-    DATE = dset['date']
-    tmp = dset['test'][dset['test']['timestamp'].str.contains(DATE)]
-    X = tmp[FEATURE_COLS]  # DataFrame
-    y = tmp[LABEL_COL]
 
-    corr = 
+    fig, axs = plt.subplots(1,3,sharex=True,sharey=True,figsize=(20,8),layout='tight')
 
+    for i, split in enumerate(['train','valid','test']):
+        corr = dset[split][FEATURE_COLS+[LABEL_COL]].corr()
+        sns.heatmap(
+            corr,
+            ax=axs[i],
+            cmap='plasma'
+        )
+        axs[i].set(
+            title=split.title()
+        )
 
+    fig.suptitle(
+        'Correlation between variables for the\n'
+        f'{nm.replace("-"," ")} for non-constant\n'
+        'variables'
+    )
 
-
+    plt.savefig(f'../deliverables/latex/assets/test/{nm}/correlations.png', dpi=400)
 
 # Auto correlations
 
 
 # %%
 # Summary stats
+for nm, dset in data.items():
+    print(nm)
+    # Drop cols
+    FEATURE_COLS = dset['feats']
+    
+    LABEL_COL = dset['label']
 
+    fig, axs = plt.subplots(1,3,sharex=True,sharey=True,figsize=(20,10),layout='tight')
+
+    for i, split in enumerate(['train','valid','test']):
+        X = dset[split][FEATURE_COLS]
+        NONBINARY_FEATURE_COLS = [
+            c for c in FEATURE_COLS if not (X[c].max()==1 and X[c].min()==0 )
+        ]   
+        BINARY_FEATURE_COLS = [c for c in FEATURE_COLS if c not in NONBINARY_FEATURE_COLS]
+        binary_feats = X[BINARY_FEATURE_COLS]
+        x_max = X[NONBINARY_FEATURE_COLS].max()
+        x_min = X[NONBINARY_FEATURE_COLS].min()
+        x_mean = X[NONBINARY_FEATURE_COLS].mean()
+
+        X = (X[NONBINARY_FEATURE_COLS]-x_mean) / (x_max-x_min)
+        
+        sns.boxplot(
+            X,
+            ax=axs[i]
+        )
+        axs[i].set(
+            title=split.title(),
+        )
+        axs[i].set_xticklabels(NONBINARY_FEATURE_COLS, rotation=45, ha='right')
+    fig.suptitle(
+        'Distribuition of normalized, non-constant,\n'
+        f'non-binary variables for {nm.replace("-"," ")}'
+    )
+
+    plt.savefig(f'../deliverables/latex/assets/test/{nm}/feature-distributions.png', dpi=400)
 
 # %%
 

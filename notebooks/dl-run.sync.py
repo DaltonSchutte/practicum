@@ -46,12 +46,12 @@ from src.eval import (
 )
 
 # %%
-SEED = 3141
+SEED = 42
 random.seed(SEED)
 np.random.seed(SEED)
 torch.manual_seed(SEED)
 
-BATCH_SIZE = 8
+BATCH_SIZE = 16
 
 warnings.filterwarnings('ignore',category=UserWarning)
 
@@ -84,7 +84,7 @@ def normalizer(x, max_, min_, mean_):
 
 # %%
 for dir in os.listdir('../data'):
-    if dir == 'wrapper-machine':
+    if (dir == 'wrapper-machine') or ('.zip' in dir):
         continue
 
     print(dir.upper())
@@ -227,13 +227,15 @@ for dir in os.listdir('../data'):
     )
 
     # Loss weighting to manage class imbalance
-    pw1 = np.mean(train_ds.y)
+    pw1 = np.mean(train_ds.y)*20
     pw0 = 1-pw1
     pw0,pw1
     weights = torch.tensor([1/pw0,1/pw1])
     weights /= weights.sum()
     weights
+    weights = torch.tensor([10.0,10.0])
     print(weights)
+
 
     # Train
     model.train(
@@ -248,7 +250,7 @@ for dir in os.listdir('../data'):
     )
 
     # Load and test best model
-    model.load_state_dict(
+    modl.load_state_dict(
         torch.load(
             os.path.join('../results/deep',dir,'transformer.pt')
         )

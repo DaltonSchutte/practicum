@@ -217,3 +217,12 @@ for dir in os.listdir('../data'):
         charts,
         open(os.path.join('../results/spc',dir,'charts.pkl'), 'wb')
     )
+
+# %%
+for dir in os.listdir('../data'):
+    if dir == 'wrapper-machine':
+        continue
+
+    print(dir.upper())
+    charts = pickle.load(open(os.path.join('../results/spc',dir,'charts.pkl'),'wb'))
+    charts

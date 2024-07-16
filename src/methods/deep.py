@@ -15,6 +15,8 @@ from torch import nn, optim
 from torch.nn import functional as F
 from torch.utils.data import Dataset
 
+from peft import LoraConfig, get_peft_model
+
 from momentfm import MOMENTPipeline
 
 
@@ -135,8 +137,7 @@ class DeepStoppingModel(nn.Module):
                 bsz, n, self.model.config.d_model*self.in_dim
             )
             out = torch.mean(out, dim=1)
-            out = self.dropout(out)
-            output = self.linear(out).softmax(1)
+            output = self.classification_head(out)
 
         elif self.model_type == 'lstm':
             output, hc = self.model(x, hc)
@@ -144,13 +145,14 @@ class DeepStoppingModel(nn.Module):
 
     def predict(self, x, hc, mask, infer=True):
         x, hc1 = self.forward(x, hc, mask, infer)
-        preds = x.softmax(1).argmax(1)
+        x = self.classification_head(x)
+        preds = x.argmax(1)
         return (preds, hc1)
 
     def to(self, device):
         if self.model_type == 'transformer':
             self.model.to(self.device)
-            self.linear.to(self.device)
+            self.classification_head.to(self.device)
         elif self.model_type == 'lstm':
             self.model.to(self.device)
 
@@ -161,24 +163,33 @@ class DeepStoppingModel(nn.Module):
                 "task_name": "classification",
                 "n_channels": self.in_dim,
                 "freeze_encoder": False,
-                "freeze_embedder": True,
+                "freeze_embedder": False,
+                "weight_decay": 0,
                 "num_class": 2
             },
         )
-        self.linear = nn.Linear(self.in_dim*self.model.config.d_model, 2)
-        self.dropout = nn.Dropout(0.1)
 
-    def _prepare_lstm(self):
-        self.model = nn.Sequential(
-            nn.LSTM(
-                self.in_dim,
-                self.hid_dim,
-                self.n_layers
-            ),
-            nn.ReLU(),
-            nn.Dropout(0.1),
-            nn.Linear(hid_dim, 2)
+        self.lora_config = LoraConfig(
+            init_lora_weights='pissa',
+            r=64,
+            lora_alpha=32,
+            target_modules=['q','v'],
+            lora_dropout=0.05
         )
+        self.model = get_peft_model(
+            self.model,
+            self.lora_config
+        )
+
+        self.classification_head = nn.Sequential(
+            nn.ReLU6(),
+            nn.Dropout(0.05),
+            nn.Linear(self.in_dim*self.model.config.d_model, 64),
+            nn.ReLU6(),
+            nn.Dropout(0.05),
+            nn.Linear(64, 2)
+        )
+
 
     def init(self) -> tuple:
         if self.model_type == 'transformer':
@@ -206,7 +217,7 @@ class DeepStoppingModel(nn.Module):
         class_weight: Optional[torch.Tensor]=torch.tensor([1.0,1.0]),
         lr: Optional[float]=1e-3,
         eta_min: Optional[float]=1e-6,
-        weight_decay: Optional[float]=0.0,
+        weight_decay: Optional[float]=0.1,
         use_pbar: Optional[bool]=True,
         debug: Optional[bool]=False
     ):
@@ -214,6 +225,7 @@ class DeepStoppingModel(nn.Module):
         self.train_losses = []
         self._f1 = 'Training...'
         self.since_improvement = 0
+        self.class_weights = class_weight.to(self.device)
 
         optimizer = optim.AdamW(
             self.model.parameters(),
@@ -222,12 +234,8 @@ class DeepStoppingModel(nn.Module):
         )
         scheduler = optim.lr_scheduler.CosineAnnealingLR(
             optimizer=optimizer,
-            T_max=epochs*len(training_data),
+            T_max=len(training_data),
             eta_min=eta_min
-        )
-        criterion = nn.CrossEntropyLoss(
-            weight=class_weight.float(),
-            reduction='sum'
         )
 
         self.use_pbar = use_pbar
@@ -241,7 +249,6 @@ class DeepStoppingModel(nn.Module):
             self._train_step(
                 training_data,
                 optimizer,
-                criterion,
                 hc,
                 scheduler,
                 debug
@@ -264,13 +271,12 @@ class DeepStoppingModel(nn.Module):
         self,
         training_data,
         optimizer,
-        criterion,
         hc=None,
         scheduler=None,
         debug=False
     ):
         self.model.train()
-        criterion.to(self.device)
+        self.classification_head.train()
         pbar = tqdm(total=len(training_data))
         for batch in training_data :
             inputs, masks, labels = batch
@@ -278,10 +284,12 @@ class DeepStoppingModel(nn.Module):
             masks = masks.to(self.device)
             labels = labels.to(self.device)
 
-            optimizer.zero_grad()
             logits, hc = self.forward(inputs, hc, masks)
-            loss = criterion(logits, labels)
+            loss = F.cross_entropy(logits.softmax(dim=1), labels, weight=self.class_weights)
 
+            #nn.utils.clip_grad_norm_(self.classification_head.parameters(), 1.5)
+            optimizer.zero_grad()
+            loss.retain_grad()
             loss.backward()
             optimizer.step()
 
@@ -309,10 +317,10 @@ class DeepStoppingModel(nn.Module):
         debug
     ):
         self.model.eval()
+        self.classification_head.eval()
         epoch_preds = []
         epoch_labels = []
         epoch_logits = []
-        criterion.to('cpu')
         with torch.no_grad():
             for batch in tqdm(valid_data, total=len(valid_data)):
                 inputs, masks, labels = batch
@@ -345,9 +353,9 @@ class DeepStoppingModel(nn.Module):
             )
             print(clf_report)
 
-            loss = criterion(
+            loss = F.cross_entropy(
                 torch.tensor(epoch_logits),
-                torch.tensor(epoch_labels)
+                torch.tensor(epoch_labels),
             ).cpu().detach().item()
 
             if loss < self.best_loss:

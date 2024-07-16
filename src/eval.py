@@ -38,17 +38,20 @@ def mean_time_from_event(
                 stop_time = ts[-1]
 
         rng = [i for i, stop in enumerate(ts) if stop==1]
-        if strict:
-            # Measure from the earliest desireable stop time
-            diff = stop_time - min(rng)
-        else:
-            # Measure from the closer end of the interval
-            if stop_time < min(rng):
+        if sum(rng) > 0:
+            if strict:
+                # Measure from the earliest desireable stop time
                 diff = stop_time - min(rng)
-            elif stop_time > max(rng):
-                diff = stop_time - max(rng)
             else:
-                diff = 0
+                # Measure from the closer end of the interval
+                if stop_time < min(rng):
+                    diff = stop_time - min(rng)
+                elif stop_time > max(rng):
+                    diff = stop_time - max(rng)
+                else:
+                    diff = 0
+        else:
+            diff = stop_time - len(rng)
         diffs.update({date: diff})
     return (diffs, np.mean(list(diffs.values())))
 
