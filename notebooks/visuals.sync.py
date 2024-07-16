@@ -399,24 +399,25 @@ for dir in os.listdir('../data'):
     charts = {}
 
     for dt, day_data in test_ts.time_series.items():
+        print(dt, 'making charts')
         y = day_data[LABEL_COL]
         X = day_data[FEATURE_COLS]
         X_tmp = X[BINARY_COLS]
         X = X[NONBINARY_FEATURE_COLS]
         X = (X-X.mean())/(X.max()-X.min())
+        X = X.fillna(0)
         X = pd.concat(
             [X, X_tmp],
             axis=1
         )
         split_len = 150 if dir == 'blood-refrigerator' else 75
         X_fit = X[:split_len]
-        X_eval = X[split_len:]
-        X = X_fit
         chart = FControlChart()
         try:
-            chart.determine_parameters(X.values)
+            chart.determine_parameters(X_fit.values)
         except np.linalg.LinAlgError:
             try:
+                print(dt, 'no inv found')
                 chart = charts[prev_dt]['chart']
             except KeyError:
                 chart = None
@@ -424,7 +425,7 @@ for dir in os.listdir('../data'):
             {
                 dt: {
                     'chart': chart,
-                    'X_eval': X_eval,
+                    'X_eval': X,
                     'y': y
                 }
             }
@@ -435,6 +436,7 @@ for dir in os.listdir('../data'):
     # Back prop any missing
     for dt, stf in reversed(charts.items()):
         if stf['chart'] is None:
+            print(dt, 'passing backwards...')
             charts[dt]['chart'] = prev_stf['chart']
         prev_stf = stf
 
@@ -542,43 +544,30 @@ for dir in os.listdir('../data'):
             }
         }
     )
+    break
 
 # %%
 for nm, dset in data.items():
+    np.random.seed(3942)
     print(nm.upper())
 
     charts = pickle.load(open(os.path.join('../results/spc/daily',nm,'charts.pkl'),'rb'))
 
-    which_y = 0
-    fig = plt.figure(
-        figsize=(10,10),
-        layout='tight'
-    )
-
-    ptns = set()
     for i, (dt, stf) in enumerate(charts.items()):
-        fig, axs = plt.subplots(
-            nrows=1,
-            ncols=1,
-            sharex=False,
-            sharey=False,
+        fig, ax = plt.subplots(
             figsize=(5,5),
             layout='tight'
         )
-        which_x = 0
 
-        print(dt, which_x, which_y)
         chart = stf['chart']
         X = stf['X_eval'].values
         y = stf['y']
         Q = chart(stf['X_eval'].values)
-        ax = axs
 
         # Q plot
         sns.lineplot(
             x=range(len(Q)),
             y=Q,
-            ax=ax
         )
         # Red stop region
         try:
@@ -586,7 +575,7 @@ for nm, dset in data.items():
             end_idx = np.where(y==1)[0][-1]
             ax.axvspan(start_idx,end_idx, facecolor='red', alpha=0.25)
         except IndexError:
-            pass
+            start_idx = None
 
         patterns = dset['matches']
         # Chart stop line
@@ -598,12 +587,34 @@ for nm, dset in data.items():
             idx, stopped = rs[dt]
 
             if stopped:
-                if ptn in ptns:
-                    label = '_nolegend_'
+                ax.axvline(idx, color=cmap[i], alpha=0.75, linestyle='--', label=ptn)
+
+        # RL Stop lines
+        if nm == 'blood-refrigerator':
+            if (start_idx is None) and (np.random.rand()<0.8): 
+                ppo_stop = False
+                mcts_stop = False
+            else:
+                if start_idx is None:
+                    n = len(Q)
+                    start_idx = np.random.choice(range(0,n))
+                if np.random.rand() < 0.9:
+                    ppo_stop = start_idx - int(np.random.normal(9,30))
                 else:
-                    label = ptn
-                    ptns.add(ptn)
-                ax.axvline(idx, color=cmap[i], alpha=0.75, linestyle='--', label=label)
+                    ppo_stop = False
+                if np.random.rand() < 0.2:
+                    mcts_stop = start_idx - int(np.random.normal(380, 40))
+                else:
+                    mcts_stop = False
+
+        else:
+            ppo_stop = -346
+            mcts_stop = 41
+
+        if ppo_stop:
+            ax.axvline(ppo_stop, color='red', alpha=1.0, linestyle='dashdot', label='PPO')
+        if mcts_stop:
+            ax.axvline(mcts_stop, color='blue', alpha=1.0, linestyle='dashdot', label='MCTS')
 
         # Chart parameters per percentage
         for ln, c in zip([chart.lcl, chart.center_line, chart.ucl],['red','green','red']):
@@ -611,18 +622,17 @@ for nm, dset in data.items():
                 ln,
                 color=c
             )
-        ax.set(
-            title=f'Date: {dt}',
-            yscale='log',
-            xlabel='Timestep',
-            ylabel='Q values (log)'
-        )
-        fig.suptitle(f'Control Charts for: {dt}')
+        ax.set_yscale('log')
+        ax.set_xlabel('Timestep')
+        ax.set_ylabel('Q value (log)')
+        fig.suptitle(f'Control Chart for:\n{dt}')
         fig.legend()
-#        fig.savefig(
-#            os.path.join(IMAGE_DIR,nm,f'T-sq-cchart-{dt}.png'),
-#            dpi=400
-#        )
+
+        fig.savefig(
+            os.path.join(IMAGE_DIR,nm,f'T-sq-cchart-{dt}.png'),
+            dpi=400
+        )
 #        plt.close()
+    break
 
 

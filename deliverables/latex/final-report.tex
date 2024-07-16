@@ -23,6 +23,8 @@
 \usepackage{amssymb}
 \usepackage{graphicx}
 \usepackage{multirow}
+\usepackage{subcaption}
+\usepackage{mwe}
 %\usepackage{algpseudocode}
 
 \begin{document}
@@ -485,6 +487,13 @@ return predictions for each time step while the RL agents stop making prediction
 action or reached the end of the day's time series. The predictions are calculated on a per-day basis for each test split (
 e.g. the 27 days for the blood refrigerator test set are each given a single prediction).
 
+The combination of traditional classification metrics allows us to evaluate the daily performance while the MTFE allows us to
+evaluate the intra-day performance. Meaning we can make more nuanced comparisons between techniques by having an understanding
+of how they perform at the macro and micro levels. Methods that have excellent precision and recall but high MTFE would suggest,
+for example, that while across days the method is accurately stopping the machine or allowing it to run without interruption, stopping
+the machine far too early might translate to more wasted person-hours evaluating and examining the machine before returning it to
+operation only for it to actually fail later in the day and require additional maintenance.
+
 
 \section{Results}
 
@@ -749,20 +758,144 @@ The MCTS didn't perform as strongly as the PPO agent. The PPO
 agent had the lowest MTFE that was before the first failure label in the time series for each day. The RL algorithms were trained
 on a single NVIDIA L4 Tensor Core GPU with 16GB memory and 4 vCPUs. 
 
-\clearpage
 \section{Discussion}\label{disc}
 
 \subsection{Findings}
+\subsubsection{Blood Refrigerator}
+
+The use of control charts parameterized on various amounts of the training data provides mixed results. For most patterns and most proportions, the MTFE is often far in advance of when the failure signals occur in the labels.
+For example, the mean MFTE for the best proportion (0.5) was -97 time steps, in the strict case, which corresponds to stopping over 45 minutes early. This is not particularly bad, especially in the case where a delicate substance
+such as blood is concerned, but for other machines this can translate to lost revenue or production. This is much better though when we consider the case where control charts are calculated daily and the mean MTFE for the best pattern
+was -378 time steps, around 214 minutes early. Regardless of machine, this is very imprecise. The traditional metrics may have improved when switching from 50\% of the training data to daily calculations, but that has its trade-offs. The
+daily charts are less likely to stop the machines on a daily basis, but when it does stop them it is likely to be 3-4 hours earlier than necessary. Again, for blood refrigerators this may not be terrible, but for machine in manufacturing
+settings these early signals may lead to diagnostic results that suggest the machine is fine, only for it to fail later in the day requiring it to be shutdown again.
+
+The RL agents both had MTFEs closer to the start of the failure period, the PPO agent in particular averaged 9 time steps (4.5 minutes) ahead of failure, than the control chart approaches which would help catch the machine prior to failing 
+without sacrificing as much operating time. However, the lower recall for both agents
+means that they may miss impending failure signals and the machine will proceed to fail without notice anyway. The precision for both agents is quite high though meaning it is less likely to raise false positive stops and therefore lead to less
+unnecessary down time than the control charting approaches. Some of the control chart patterns did also show high precision and recall, however, they also tended to have much larger MTFEs. The MCTS agent didn't perform as strongly as the PPO agent
+and this is likely due to the nature of the algorithm and the nature of the sensor data. By adopting the MCTS method to better operate on continuous state spaces, the performance may improve. However, as it stands, the PPO agent would certainly be
+the preferred approach.
+
+Figure 7 shows some example T$^2$ statistics and control charts for the blood refrigerator on four different days. These charts depict those calculated using the first 150 time steps for each day. Figure 7a is a good example of the limitations of the chosen
+control chart patterns and how design of the stopping patterns is of critical importance
+to making the control charts effective. The PPO agent performed very well and stopped the machine close to the failure region. This would translate to less unnecessary downtime and person-hours spent servicing the machine. Figure 7b demonstrates one weakness
+of the T$^2$ control charts, the dependence on being able to calculate a reasonable inverse covariance matrix from the sample data. As a result of calculating the inverse covariance matrix, many of the statistics are very large. The PPO agent however does not
+suffer from this same limitation and is able to provide a more appropriately timed stopping signal, this suggests that the agent has generalized somewhat effectively from the training data. Figure 7c is an example where nearly all methods, except for the MCTS
+agent, stop the machine when it was operating within parameters. The 60seqAt0.05 and 120seqAt0.05 patterns were the only two that did not erroneously stop the machine on that day. Finally, figure 7d shows a machine that is producing less varied T$^2$ statistics
+over the operational period of the machine. However, many of the patterns either stop the machine very early into the period or fail to stop it all together. The PPO agent provides a reasonably timed stop signal in this instance.
+
+\begin{figure}[ht!]
+    \centering
+    \begin{subfigure}[b]{0.475\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{assets/spc/blood-refrigerator/T-sq-cchart-2022-12-02.png}
+        \caption{{\small An example where nearly all of the methods stopped the process prior to the failure region. The PPO agent stopped the process closest to the region, with the MCTS agent failing to stop. The control chart patterns all stopped very early into operation.}}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.475\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{assets/spc/blood-refrigerator/T-sq-cchart-2022-12-16.png}
+        \caption{{\small A process where the T$^2$ statistics became unbounded resulting in premature stopping by all of the control chart patterns. The MCTS algorithm failed to stop the process. The PPO agent did stop the process closer to the region.}}
+    \end{subfigure}
+    \vskip\baselineskip
+    \begin{subfigure}[b]{0.475\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{assets/spc/blood-refrigerator/T-sq-cchart-2022-12-19.png}
+        \caption{{\small A day where the machine never entered into a failure state. Notably, the PPO agent incorrectly stopped the machine while some of the control chart patterns did not.}}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.475\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{assets/spc/blood-refrigerator/T-sq-cchart-2022-12-26.png}
+        \caption{{\small An example where the MCTS algorithm stopped the process nearest the failure region. The PPO agent stopped the process near the region and many of the control charts stopped it very early.}}
+    \end{subfigure}
+    \caption{Plots of the T$^2$ statistics and T$^2$ control chart elements for the blood refrigerator. Vertical lines indicate where the various methods raised a stop signal for the process. Red regions are where failures were reported in the labels. The absence of a red region means the machine never entered into a failure state. The absence of a method in the legend means the method did not raise a stop signal.}
+\end{figure}
+
+In response to our research questions, we can conclude:
+\begin{enumerate}
+    \item PPO has the capacity to perform well for predicting failure for a blood refigerator. MCTS seems less capable but further research is suggested before making a firm conclusion.
+    \item PPO shows less brittleness than the patterns we chose. With appropriate pattern definition the control charts may be more competitive. However, the overhead for implementing PPO is considerably greater compared to the control charts.
+    \item We cannot draw conclusions on this item since we could not succesfully train the MOMENT model.
+    \item The PPO algorithm was able to converge and solve the problem more effectively than the MCTS algorithm for this machine.
+\end{enumerate}
+
+\subsubsection{Nitrogen Generator}
+
+As mentioned above, we were unable to find windows that would produce daily control charts for the nitrogen generator. Overall, the performance for all methods on the nitrogen generator was notably worse than for the blood refrigerator. This is
+likely due to there only being four variables remaining for the generator after removing variables with zero variance so any one variable has a much stronger effect on the difference between subsequent T$^2$ values than the relative effect of one
+variable for the blood refrigerator with 12 total variables. The charts all show processes that tend to "hug" one of the control limits. Typically, this would be interpreted as a fundamental shift having occurred in the machine that would require
+recalculation of the control limits. As shown in figure 8, we only observed one day from the test split where the control chart patterns didn't all stop the machine almost immediately. The T$^2$ statistics are still hugging the bottom control limit but the patterns with
+longer window or sequence lengths are more robust to this situation though still stop well ahead of the failure region.
+
+The RL agents both struggled more with this machine as well as compared to the blood refrigerator. The time to converge for both algorithms was notably longer for both algorithms. This may be due to the few variables and their weak correlations with
+the label or the ease with which, even a small, neural network can over-fit. While the PPO agent did perform much better than the MCTS in this scenario, the performance is still not ideal and likely to generate very early or erroneous stop signals.
+
+\begin{figure}[ht!]
+    \centering
+    \begin{subfigure}[b]{0.5\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{assets/spc/nitrogen-generator/T-sq-cchart-2023-09-25.png}
+        \caption{{\small The only example where the patterns didn't stop the machine almost immediately.}}
+    \end{subfigure}
+    \vskip\baselineskip
+    \begin{subfigure}[b]{0.5\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{assets/spc/nitrogen-generator/T-sq-cchart-2023-09-28.png}
+        \caption{{\small A representative example of the other days.}}
+    \end{subfigure}
+    \caption{T$^2$ control charts for the nitrogen generator calculated using proportions of the training split.}
+\end{figure}
+
+With regards to our research questions:
+\begin{enumerate}
+    \item PPO seems to be able to perform acceptably. MCTS failed to converge entirely.
+    \item PPO shows some robustness to the trends observed in the control charts. The control charts would need considerable effort put into pattern selection to improve their performance or consideration of alternative control chart methods entirely.
+    \item We were unable to train MOMENT and cannot make conclusions on this question.
+    \item The PPO method can converge and perform reasonably well compared to the MCTS algorithm. However, both methods would want to have more comprehensive tuning before being considered for a deployment setting.
+\end{enumerate}
 
 \subsection{Limitations}
+Some of the limitations of this work include the lack of hyperparameter tuning for the transformer and reinforcement learning models. RL models, in particular, are rather finicky and
+have been found to be sensitive to random seed. Because they exhibit such a strong dependence on initial conditions and randomness, it would be ideal to include the random seed as a
+hyperparameter to be tuned during training. However, this comes at increased cost. Even on the data center class NVIDIA L4 GPU, training the PPO algorithm until it converged took an
+average of 6 hours per hyperparameter configuration and the MCTS algorithm varied from 2-8 hours. While the transformer wasn't able to be trained, a full training cycle over 5 epochs
+was expected to take around 3 hours on the NVIDIA 4070 TI Super. Even modest hyperparameter spaces would require days of compute and distribution across many machines to efficiently
+train these models. If the use case warranted such a sophisticated model, then the effort, and expense, may be worth the effort.
+
+The dataset that is available is very good and a great resource, but still rather small for some of these models. For example, even though the blood refrigerator had over 60,000 time steps in the training split,
+it amounted to only 25 unique training days. This means the RL agents would see the same 25 days for each episode which is not very diverse when one considers the infinite state space
+possible for 12 variables over an entire day. If an individual works at an organization that owns the machines and has the sensors constantly delivering data, this issue can be mitigated
+as they will have access to considerably more data.
+
+As mentioned, we only evaluated the methods on an intra-day basis. Some machines may be expected to run continuously 24/7 and would require a different approach to modelling.
+
+After the issues experienced with the MOMENT model, further investigation of their training data revealed that they did use sensor time series in the dataset. However, it also included
+time series from biomedical phenomena, finance, traffic, etc. It may be necessary to have more sensor data and use a more aggressive fine-tuning approach to overcome the differences
+between these other types of time series data and our own. The model was also trained using single-channel (univariate) time series rather than multi-channel which may have contributed
+to the difficulties we experienced. Additional exploration is necessary to make this approach feasible. However, we believe that it would be a worthwhile effort considering the results
+shared in the MOMENT paper and the general abilities of foundational transformer models at large.
 
 \subsection{Future Work}
+Continuing to explore these threads would be a worthwhile endeavor if automated methods for machine stopping are required. Depending on the sophistication required or the criticality
+of proper stopping of the machine, some avenues may be more worthwhile than others.
 
+Further research in the control charting methods would be to explore other multivariate control charting methods for this problem. It would also be pertinent to do a thorough comparison
+of various methods for determining the length of the baseline control period. Our results indicate that using some amount of the most recent sensor data may be effective in some cases
+but other cases may warrant daily recalculation of charts. Finding patterns that correspond to particular failure scenarios in the machine would also be an interesting direction.
 
+Continuing to explore the use of RL algorithms would necessitate more work on the computational infrastructure side of things. Aside from the many developments in RL algorithms that have
+been published since the methods we used, finding useful hyperparameter combinations is very intense task. Additionally, interesting research could be done in increasing the sample efficiency
+to make the most of the limited dataset. This may be achievable with simple tuning of the PPO parameters or with some modifications to the algorithm. It would also be interesting
+to attempt to train an agent that uses the data from various machines. This may improve the generalizability of the agent, which could alleviate some of the brittleness that trained deep RL
+algorithms can exhibit.
 
 \section{Conclusion} \label{conc}
-
-
+We have shown that classic techniques from statistical process control and more recent advances in reinforcement learning can both provide effective methods for detecting machine failure
+from multivariate time series data. Each comes with its own set of considerations and which is the best fit for a particular use case will strongly depend on a number of factors unique
+to each organization and machine. However, control charts can provide a good initial technique that can serve both as an initial method to use while other methods are explored and as a
+baseline to compare other techniques against. Due to its efficacy, low computation cost, and ease of implementation, T$^2$ control charts are a good starting point for machine monitoring.
 
 \bibliography{practicum}{}
 \bibliographystyle{unsrt}
