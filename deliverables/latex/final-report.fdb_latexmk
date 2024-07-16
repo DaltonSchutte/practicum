@@ -1,14 +1,18 @@
 # Fdb version 3
-["bibtex final-report"] 1721104888 "final-report.aux" "final-report.bbl" "final-report" 1721104894
+["bibtex final-report"] 1721112960 "final-report.aux" "final-report.bbl" "final-report" 1721112966
   "/usr/share/texlive/texmf-dist/bibtex/bst/base/unsrt.bst" 1292289607 18030 1376b4b231b50c66211e47e42eda2875 ""
-  "final-report.aux" 1721104894 6006 eacd9b720a42a0a6847b91d7e50cbd4c "pdflatex"
-  "practicum.bib" 1721057121 24457 c1e3bf8b9c2557c53c3690ee6b1ea107 ""
+  "final-report.aux" 1721112966 7974 99b9bb681cb6801b2ef4c939d83c2455 "pdflatex"
+  "practicum.bib" 1721112485 25155 f348d49eb502e37c8ac5f1e1500b3e2b ""
   (generated)
   "final-report.bbl"
   "final-report.blg"
-["pdflatex"] 1721104888 "final-report.tex" "final-report.pdf" "final-report" 1721104894
+["pdflatex"] 1721112960 "final-report.tex" "final-report.pdf" "final-report" 1721112966
   "/etc/texmf/web2c/texmf.cnf" 1712633582 475 c0e671620eb5563b2130f56340a5fde8 ""
+  "/home/dalton/.texlive2021/texmf-var/fonts/pk/ljfour/jknappen/ec/tcrm0700.600pk" 1721111760 8244 95f02755f9569975e8c50686e91e1603 ""
+  "/home/dalton/.texlive2021/texmf-var/fonts/pk/ljfour/jknappen/ec/tcrm0800.600pk" 1721111761 9268 6be1e5c4fa8871b4338c60c9be4e0214 ""
   "/usr/share/texlive/texmf-dist/fonts/map/fontname/texfonts.map" 1577235249 3524 cb3e574dea2d1052e39280babc910dc8 ""
+  "/usr/share/texlive/texmf-dist/fonts/tfm/jknappen/ec/tcrm0700.tfm" 1136768653 1536 73da8e8f1d2a4c957d51ca133585586b ""
+  "/usr/share/texlive/texmf-dist/fonts/tfm/jknappen/ec/tcrm0800.tfm" 1136768653 1536 05df9db6aeccc4eea94fec15c9024f79 ""
   "/usr/share/texlive/texmf-dist/fonts/tfm/public/amsfonts/cmextra/cmex7.tfm" 1246382020 1004 54797486969f23fa377b128694d548df ""
   "/usr/share/texlive/texmf-dist/fonts/tfm/public/amsfonts/cmextra/cmex8.tfm" 1246382020 988 bdf658c3bfc2d96d3c8b02cfc1c94c20 ""
   "/usr/share/texlive/texmf-dist/fonts/tfm/public/amsfonts/symbols/msam10.tfm" 1246382020 916 f87d7c45f9c908e672703b83b72241a3 ""
@@ -21,6 +25,7 @@
   "/usr/share/texlive/texmf-dist/fonts/tfm/public/cm/cmbx12.tfm" 1136768653 1324 c910af8c371558dc20f2d7822f66fe64 ""
   "/usr/share/texlive/texmf-dist/fonts/tfm/public/cm/cmcsc10.tfm" 1136768653 1300 63a6111ee6274895728663cf4b4e7e81 ""
   "/usr/share/texlive/texmf-dist/fonts/tfm/public/cm/cmex10.tfm" 1136768653 992 662f679a0b3d2d53c1b94050fdaa3f50 ""
+  "/usr/share/texlive/texmf-dist/fonts/tfm/public/cm/cmmi10.tfm" 1136768653 1528 abec98dbc43e172678c11b3b9031252a ""
   "/usr/share/texlive/texmf-dist/fonts/tfm/public/cm/cmmi12.tfm" 1136768653 1524 4414a8315f39513458b80dfc63bff03a ""
   "/usr/share/texlive/texmf-dist/fonts/tfm/public/cm/cmmi6.tfm" 1136768653 1512 f21f83efb36853c0b70002322c1ab3ad ""
   "/usr/share/texlive/texmf-dist/fonts/tfm/public/cm/cmmi8.tfm" 1136768653 1520 eccf95517727cb11801f4f1aee3a21b4 ""
@@ -70,6 +75,7 @@
   "/usr/share/texlive/texmf-dist/tex/latex/graphics/trig.sty" 1636758526 4009 187ea2dc3194cd5a76cd99a8d7a6c4d0 ""
   "/usr/share/texlive/texmf-dist/tex/latex/l3backend/l3backend-pdftex.def" 1642022539 29921 f0f4f870357ebfb8fe58ed9ed4ee9b92 ""
   "/usr/share/texlive/texmf-dist/tex/latex/latexconfig/epstopdf-sys.cfg" 1279039959 678 4792914a8f45be57bb98413425e4c7af ""
+  "/usr/share/texlive/texmf-dist/tex/latex/multirow/multirow.sty" 1615845910 6149 2398eec4faa1ee24ff761581e580ecf1 ""
   "/usr/share/texlive/texmf-dist/web2c/texmf.cnf" 1644012257 39432 7155514e09a3d69036fac785183a21c2 ""
   "/usr/share/texmf/web2c/texmf.cnf" 1644012257 39432 7155514e09a3d69036fac785183a21c2 ""
   "/var/lib/texmf/fonts/map/pdftex/updmap/pdftex.map" 1712633586 128028 f533b797fba58d231669ea19e894e23e ""
@@ -80,9 +86,9 @@
   "assets/test/nitrogen-generator/correlations.png" 1721005690 371688 bc6f7128ebb4f427e2eb821df3451684 ""
   "assets/test/nitrogen-generator/feature-distributions.png" 1721005680 400431 14fcc57b20e06d1d3933d06e292bb914 ""
   "assets/test/nitrogen-generator/features.png" 1721005430 1048496 eb16c6378f9f64188200c9c9c79e9c50 ""
-  "final-report.aux" 1721104894 6006 eacd9b720a42a0a6847b91d7e50cbd4c "pdflatex"
-  "final-report.bbl" 1721104888 4484 7a90a4280767b414e179dcb22be7e9d7 "bibtex final-report"
-  "final-report.tex" 1721104880 28408 130cb0e1815700bce109254a0ce9fede ""
+  "final-report.aux" 1721112966 7974 99b9bb681cb6801b2ef4c939d83c2455 "pdflatex"
+  "final-report.bbl" 1721112960 4919 f79fc6ca252bbaa7cb10a5b45b8bcfa4 "bibtex final-report"
+  "final-report.tex" 1721112958 64883 e8e647de06e0d7f501f2443544cd2db9 ""
   (generated)
   "final-report.aux"
   "final-report.log"

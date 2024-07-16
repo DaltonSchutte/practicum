@@ -100,4 +100,15 @@ John Schulman, Sergey Levine, P.~Abbeel, Michael~I. Jordan, and Philipp Moritz.
 \newblock Trust region policy optimization.
 \newblock {\em ArXiv}, abs/1502.05477, 2015.
 
+\bibitem{Hu2021LoRALA}
+J.~Edward Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean
+  Wang, and Weizhu Chen.
+\newblock Lora: Low-rank adaptation of large language models.
+\newblock {\em ArXiv}, abs/2106.09685, 2021.
+
+\bibitem{meng2024pissaprincipalsingularvalues}
+Fanxu Meng, Zhaohui Wang, and Muhan Zhang.
+\newblock Pissa: Principal singular values and singular vectors adaptation of
+  large language models, 2024.
+
 \end{thebibliography}

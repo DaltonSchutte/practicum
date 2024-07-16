@@ -22,6 +22,7 @@
 \usepackage{amsfonts}
 \usepackage{amssymb}
 \usepackage{graphicx}
+\usepackage{multirow}
 %\usepackage{algpseudocode}
 
 \begin{document}
@@ -44,8 +45,12 @@
 \begin{abstract}
   \noindent We investigate methods from statistical process control, deep learning, and reinforcement learning
   for predicting when two machines will fail. Each machine is fitted with sensors that report data at semi-regular
-  intervals for each time step. Our results suggest that ...
-
+  intervals for each time step. Our results suggest that there is promise in reinforcement learning agents trained
+  using proximal policy optimization. Our findings also suggest that there is value in daily generated T$^2$ control
+  charts. The state of the art time series transformer model could not be trained so we do not make an assessment of
+  its abilities, however, given the nature of the model it may be worth additional troubleshooting to evaluate its
+  potential. Ultimately, the control charts are likely the best performance to cost option due to the lower compute, 
+  expertise, and data availability they require.
 \end{abstract}
 
 
@@ -389,6 +394,12 @@ shuffle all of the days during each episode to prevent the agent from trying to 
 there is an argument to be made for the importance of day-to-day patterns, that is a problem that warrants its own
 paper. For simplicity, we will proceed only trying to have the agents learn how to act within each day.
 
+For both algorithms, the hidden dimension for the neural networks is determined by the number of input features for the machine.
+PPO uses the first power of 2 larger than the input dimension and MCTS uses the second power of 2 larger than the input dimension.
+These were determined empirically over a limited space. For the blood refrigerator, with 12 variables, the hidden layers of the
+networks in the PPO agent have dimension 16 but dimension 32 for the MCTS agent. For the nitrogen generator the layers are 8 and
+16, respectively.
+
 \paragraph{Monte Carlo Tree Search}
 The Monte Carlo Tree Search (MCTS) with neural guidance stores information in a tree structure with states as nodes
 and actions connecting from that node to the next state that it transitioned to as a result of that action. It
@@ -432,15 +443,25 @@ validation set after 5 epochs.
 
 \paragraph{Proximal Policy Optimization}
 The proximal policy optimization (PPO)\cite{Schulman2017ProximalPO} is an extention of their earlier trust-region policy
-optimization algorithm\cite{Schulman2015TrustRP}. The agent uses both a neural network to learn a policy, that is sampled
+optimization algorithm\cite{Schulman2015TrustRP}. It is an on policy algorithm and uses two neural networks during training. 
+The agent uses both a neural network to learn a policy, that is sampled
 from using a categorical distribution, to determine what action to take in a given state and a separate network to learn
 the expected value of a given state. We sample from a distribuition determined by the policy to allow some amount of exploration
 to persist during training. This can help reduce the likelihood an agent gets stuck in a locally optimal policy and unable to 
-find the globally optimal policy. The PPO algorithm contains some simplifications and improves the sample
-efficiency by using multiple policy updates per episode (or epoch). During each episode, the policy and value networks are
-updated $k$ times, each time using a different minibatch of recent experiences stored in the agent's memory.
+find the globally optimal policy. The policy updates are clipped to prevent any single update from being too large and destabilizing
+the learning process.
 
-We choose to explore this algorithm since it has demonstrated excellent performance in a variety of continuous state spaces.
+The PPO algorithm contains some simplifications and improves the sample
+efficiency by using multiple policy updates per episode (or epoch). During each episode, the policy and value networks are
+updated $k$ times, each time using a different minibatch of recent experiences stored in the agent's memory. A simple queue
+is used to store the experiences in the order they occur up to a total of 10,000 experiences. As new ones are added the oldest
+experiences will be removed from the memory to maintain 10,000 examples. We use 10 updates per learning instance with an
+experience replay batch size of 64 per update. The $\epsilon-$clipping parameter is set to 0.2 (taken from the paper) and a
+learning rate of 0.0003 is used with the Adam\cite{Kingma2014AdamAM} optimizer. The reward discounting factor is set to 0.999.
+
+We chose to explore this algorithm since it has demonstrated excellent performance in a variety of continuous state spaces and
+is likely to demonstrate better convergence in this scenario. While the MCTS algorithm is very powerful, it tends to perform best
+when used either when there is an opponent the agent is playing against and/or when the state space is discrete.
 
 \subsection{Evaluation}
 The trained model or agent is used to generate predictions on the held-out test set. We collect the recall, precision, and 
@@ -469,10 +490,251 @@ e.g. the 27 days for the blood refrigerator test set are each given a single pre
 
 \subsection{T$^2$ Control Charts}
 
+\subsubsection{Blood Refrigerator}
+
+Tables 2-5 report the MTFE, F1, Precision, and Recall scores for the T$^2$ control charts that were determined based on the
+last $p$ proportion of the training split. Table 6 includes the same metrics but in the case where the first 150 time steps
+were used to determine the control chart parameters for the day. The patterns are described in the first column of each table
+and translate to "XperYat$\alpha$" or "XseqAt$\alpha$" where $\alpha=0.05$, X is the number of breaches, and Y is the length
+of the window.
+
+Overall, there are not many differences between the results for the lenient and strict evaluation protocols for all tables.
+The approximate spacing between time intervals is 34 seconds. The values that most closely mimic the 20 minute RW with 30
+minute PW would be the "20per40at0.05" and "40seqAt0.05" rows from each table.
+
+\begin{table}[h]
+    \begin{tabular}{|c|cc|cc|cc|cc|}
+        \hline \\
+        \textbf{}       & \multicolumn{8}{c|}{Proportion of Training Split}                                                                                                        \\
+                        & \multicolumn{2}{c}{0.25}            & \multicolumn{2}{c}{0.50}            & \multicolumn{2}{c}{0.75}            & \multicolumn{2}{c|}{1.00}              \\ 
+                        & \multicolumn{1}{c}{Lenient} & \multicolumn{1}{c}{Strict} & \multicolumn{1}{c}{Lenient} & \multicolumn{1}{c}{Strict} & \multicolumn{1}{c}{Lenient} & \multicolumn{1}{c}{Strict} & \multicolumn{1}{c}{Lenient} & \multicolumn{1}{c|}{Strict} \\ \hline
+        5per10at0.05    & -328          & -328          & -249          & -249          & -421          & -421          & -422           & -422           \\
+        10per20at0.05   & -398          & -398          & -243          & -243          & -422          & -422          & -422           & -422           \\
+        20per40at0.05   & -400          & -400          & -232          & -232          & -422          & -422          & -422           & -422           \\
+        30per60at0.05   & -400          & -400          & -213          & -213          & -422          & -422          & -422           & -422           \\
+        40per80at0.05   & -400          & -400          & -185          & -185          & -422          & -422          & -422           & -422           \\
+        60per120at0.05  & -391          & -391          & -192          & -192          & -422          & -422          & -422           & -422           \\
+        120per240at0.05 & -365          & -365          & -110          & -110          & -422          & -422          & -422           & -422           \\ \hline
+        5seqAt0.05      & -326          & -326          & -245          & -245          & -421          & -421          & -421           & -421           \\ 
+        10seqAt0.05     & -392          & -392          & -177          & -177          & -421          & -421          & -421           & -421           \\
+        20seqAt0.05     & -343          & -343          & \textbf{9}    & \textbf{9}    & -421          & -421          & -418           & -418           \\
+        30seqAt0.05     & -316          & -316          & 197           & 198           & -397          & -397          & -383           & -383           \\
+        40seqAt0.05     & -299          & -299          & 107           & 110           & -397          & -397          & -383           & -383           \\
+        60seqAt0.05     & -305          & -305          & 188           & 193           & -377          & -377          & \textit{-236*} & \textit{-234*} \\
+        120seqAt0.05    & \textbf{-284} & \textbf{-284} & \textit{-27*} & \textit{-22*} & \textbf{-298} & \textbf{-298} & \textbf{34}    & \textbf{42}    \\ \hline
+        \textbf{Mean}   & \textbf{-353} & \textbf{-353} & \textbf{-98}  & \textbf{-97}  & \textbf{-406} & \textbf{-406} & \textbf{-370}  & \textbf{-369}  \\ \hline
+    \end{tabular}
+    \caption{Mean Time From Event for the T$^2$ Control Charts trained on varying portions of the training split. Best absolute result per column in bold, best without surpasing the start of failure in italics with *}
+\end{table}
+
+\begin{table}[]
+    \begin{tabular}{|c|cc|cc|cc|cc|}
+        \hline
+        \textbf{}       & \multicolumn{8}{c|}{Proportion of Training Split}                                                                                                                                                                                          \\
+                        & \multicolumn{2}{c}{0.25}                                 & \multicolumn{2}{c}{0.50}                                 & \multicolumn{2}{c}{0.75}                                 & \multicolumn{2}{c|}{1.00}                                 \\
+                        & \multicolumn{1}{c}{Lenient} & \multicolumn{1}{c}{Strict} & \multicolumn{1}{c}{Lenient} & \multicolumn{1}{c}{Strict} & \multicolumn{1}{c}{Lenient} & \multicolumn{1}{c}{Strict} & \multicolumn{1}{c}{Lenient} & \multicolumn{1}{c|}{Strict} \\ \hline
+        5per10at0.05    & 0.00                        & 0.00                       & 0.20                        & 0.20                       & 0.00                        & 0.00                       & 0.00                        & 0.00                       \\
+        10per20at0.05   & 0.11                        & 0.11                       & 0.29                        & 0.29                       & 0.00                        & 0.00                       & 0.00                        & 0.00                       \\
+        20per40at0.05   & 0.11                        & 0.11                       & 0.29                        & 0.29                       & 0.00                        & 0.00                       & 0.00                        & 0.00                       \\
+        30per60at0.05   & 0.11                        & 0.11                       & 0.36                        & 0.36                       & 0.00                        & 0.00                       & 0.00                        & 0.00                       \\
+        40per80at0.05   & 0.11                        & 0.11                       & 0.36                        & 0.36                       & 0.00                        & 0.00                       & 0.00                        & 0.00                       \\
+        60per120at0.05  & 0.11                        & 0.11                       & 0.36                        & 0.36                       & 0.00                        & 0.00                       & 0.00                        & 0.00                       \\
+        120per240at0.05 & 0.11                        & 0.11                       & 0.36                        & 0.36                       & 0.00                        & 0.00                       & 0.00                        & 0.00                       \\ \hline
+        5seqAt0.05      & 0.00                        & 0.00                       & 0.20                        & 0.20                       & 0.00                        & 0.00                       & 0.00                        & 0.00                       \\ 
+        10seqAt0.05     & 0.11                        & 0.11                       & 0.29                        & 0.29                       & 0.00                        & 0.00                       & 0.00                        & 0.00                       \\
+        20seqAt0.05     & 0.11                        & 0.11                       & 0.36                        & 0.36                       & 0.00                        & 0.00                       & 0.00                        & 0.00                       \\
+        30seqAt0.05     & 0.11                        & 0.11                       & 0.48                        & 0.42                       & 0.00                        & 0.00                       & 0.00                        & 0.00                       \\
+        40seqAt0.05     & 0.11                        & 0.11                       & 0.59                        & 0.54                       & 0.00                        & 0.00                       & 0.00                        & 0.00                       \\
+        60seqAt0.05     & 0.20                        & 0.20                       & 0.67                        & 0.62                       & 0.00                        & 0.00                       & 0.11                        & 0.11                       \\
+        120seqAt0.05    & \textbf{0.29}               & \textbf{0.29}              & \textbf{0.82}               & \textbf{0.79}              & \textbf{0.10}               & \textbf{0.10}              & \textbf{0.27}               & \textbf{0.27}              \\ \hline
+        \textbf{Mean}   & \textbf{0.11}               & \textbf{0.11}              & \textbf{0.40}               & \textbf{0.39}              & \textbf{0.01}               & \textbf{0.01}              & \textbf{0.03}               & \textbf{0.03}              \\ \hline
+    \end{tabular}
+    \caption{F$_1$ scores for T$^2$ Control Charts on varying portions of the training split. Best in bold.}
+\end{table}
+ 
+\begin{table}[]
+    \begin{tabular}{|c|cc|cc|cc|cc|}
+        \hline
+        \textbf{}       & \multicolumn{8}{c|}{Proportion of Training Split}                                                                                                                                                                                          \\
+                        & \multicolumn{2}{c}{0.25}                                 & \multicolumn{2}{c}{0.50}                                 & \multicolumn{2}{c}{0.75}                                 & \multicolumn{2}{c|}{1.00}                                 \\
+                        & \multicolumn{1}{c}{Lenient} & \multicolumn{1}{c}{Strict} & \multicolumn{1}{c}{Lenient} & \multicolumn{1}{c}{Strict} & \multicolumn{1}{c}{Lenient} & \multicolumn{1}{c}{Strict} & \multicolumn{1}{c}{Lenient} & \multicolumn{1}{c|}{Strict} \\ \hline
+        5per10at0.05    & 0                           & 0                          & 1                           & 1                          & 0                           & 0                          & 0                           & 0                          \\
+        10per20at0.05   & 1                           & 1                          & 1                           & 1                          & 0                           & 0                          & 0                           & 0                          \\
+        20per40at0.05   & 1                           & 1                          & 1                           & 1                          & 0                           & 0                          & 0                           & 0                          \\
+        30per60at0.05   & 1                           & 1                          & 1                           & 1                          & 0                           & 0                          & 0                           & 0                          \\
+        40per80at0.05   & 1                           & 1                          & 1                           & 1                          & 0                           & 0                          & 0                           & 0                          \\
+        60per120at0.05  & 1                           & 1                          & 1                           & 1                          & 0                           & 0                          & 0                           & 0                          \\
+        120per240at0.05 & 1                           & 1                          & 1                           & 1                          & 0                           & 0                          & 0                           & 0                          \\ \hline
+        5seqAt0.05      & 0                           & 0                          & 1                           & 1                          & 0                           & 0                          & 0                           & 0                          \\
+        10seqAt0.05     & 1                           & 1                          & 1                           & 1                          & 0                           & 0                          & 0                           & 0                          \\
+        20seqAt0.05     & 1                           & 1                          & 1                           & 1                          & 0                           & 0                          & 0                           & 0                          \\
+        30seqAt0.05     & 1                           & 1                          & 1                           & 1                          & 0                           & 0                          & 0                           & 0                          \\
+        40seqAt0.05     & 1                           & 1                          & 1                           & 1                          & 0                           & 0                          & 0                           & 0                          \\
+        60seqAt0.05     & 1                           & 1                          & 1                           & 1                          & 0                           & 0                          & 1                           & 1                          \\
+        120seqAt0.05    & 1                           & 1                          & 1                           & 1                          & 1                           & 1                          & 1                           & 1                          \\ \hline
+        \textbf{Mean}   & \textbf{0.86}               & \textbf{0.86}              & \textbf{1.00}               & \textbf{1.00}              & \textbf{0.07}               & \textbf{0.07}              & \textbf{0.14}               & \textbf{0.14}             \\ \hline
+    \end{tabular}
+    \caption{Precision scores. Best in bold.}
+\end{table}
+
+\begin{table}[]
+    \begin{tabular}{|c|cc|cc|cc|cc|}
+        \hline
+        \textbf{}       & \multicolumn{8}{c|}{Proportion of Training Split}                                                                                                                                                                                          \\
+                        & \multicolumn{2}{c}{0.25}                                 & \multicolumn{2}{c}{0.50}                                 & \multicolumn{2}{c}{0.75}                                 & \multicolumn{2}{c|}{1.00}                                 \\
+                        & \multicolumn{1}{c}{Lenient} & \multicolumn{1}{c}{Strict} & \multicolumn{1}{c}{Lenient} & \multicolumn{1}{c}{Strict} & \multicolumn{1}{c}{Lenient} & \multicolumn{1}{c}{Strict} & \multicolumn{1}{c}{Lenient} & \multicolumn{1}{c|}{Strict} \\ \hline
+        5per10at0.05    & 0.00                        & 0.00                       & 0.11                        & 0.11                       & 0.00                        & 0.00                       & 0.00                        & 0.00                       \\
+        10per20at0.05   & 0.06                        & 0.06                       & 0.17                        & 0.17                       & 0.00                        & 0.00                       & 0.00                        & 0.00                       \\
+        20per40at0.05   & 0.06                        & 0.06                       & 0.17                        & 0.17                       & 0.00                        & 0.00                       & 0.00                        & 0.00                       \\
+        30per60at0.05   & 0.06                        & 0.06                       & 0.22                        & 0.22                       & 0.00                        & 0.00                       & 0.00                        & 0.00                       \\
+        40per80at0.05   & 0.06                        & 0.06                       & 0.22                        & 0.22                       & 0.00                        & 0.00                       & 0.00                        & 0.00                       \\
+        60per120at0.05  & 0.06                        & 0.06                       & 0.22                        & 0.22                       & 0.00                        & 0.00                       & 0.00                        & 0.00                       \\
+        120per240at0.05 & 0.06                        & 0.06                       & 0.22                        & 0.22                       & 0.00                        & 0.00                       & 0.00                        & 0.00                       \\ \hline
+        5seqAt0.05      & 0.00                        & 0.00                       & 0.11                        & 0.11                       & 0.00                        & 0.00                       & 0.00                        & 0.00                       \\
+        10seqAt0.05     & 0.06                        & 0.06                       & 0.17                        & 0.17                       & 0.00                        & 0.00                       & 0.00                        & 0.00                       \\
+        20seqAt0.05     & 0.06                        & 0.06                       & 0.22                        & 0.22                       & 0.00                        & 0.00                       & 0.00                        & 0.00                       \\
+        30seqAt0.05     & 0.06                        & 0.06                       & 0.32                        & 0.26                       & 0.00                        & 0.00                       & 0.00                        & 0.00                       \\
+        40seqAt0.05     & 0.06                        & 0.06                       & 0.42                        & 0.37                       & 0.00                        & 0.00                       & 0.00                        & 0.00                       \\
+        60seqAt0.05     & 0.11                        & 0.11                       & 0.50                        & 0.45                       & 0.00                        & 0.00                       & 0.06                        & 0.06                       \\
+        120seqAt0.05    & \textbf{0.17}               & \textbf{0.17}              & \textbf{0.70}               & \textbf{0.65}              & \textbf{0.05}               & \textbf{0.05}              & \textbf{0.16}               & \textbf{0.16}              \\ \hline
+    \end{tabular}
+    \caption{Recall scores. Best in bold.}
+\end{table}
+
+Across all of tables 2-5, the best results are when only the most recent 50\% of the training split is used to determine the
+charts. The weakest results are when 75\% of the training split is used. It also tends to be the case that a higher number of
+breaches per window produces stronger results.
+
+\begin{table}[]
+    \begin{tabular}{|cc|cccc|}
+        \hline
+                                         &         & Mean Time From Event & Precision & Recall        & F1            \\ \hline
+        \multirow{2}{*}{5per10at0.05}    & Lenient & -421.37              & 1.00      & 0.74          & 0.85          \\
+                                         & Strict  & -421.37              & 1.00      & 0.74          & 0.85          \\ \hline
+        \multirow{2}{*}{10per20at0.05}   & Lenient & -420.52              & 1.00      & 0.74          & 0.85          \\
+                                         & Strict  & -420.52              & 1.00      & 0.74          & 0.85          \\ \hline
+        \multirow{2}{*}{20per40at0.05}   & Lenient & -410.81              & 1.00      & 0.74          & 0.85          \\
+                                         & Strict  & -410.81              & 1.00      & 0.74          & 0.85          \\ \hline
+        \multirow{2}{*}{30per60at0.05}   & Lenient & -413.67              & 1.00      & 0.74          & 0.85          \\
+                                         & Strict  & -413.67              & 1.00      & 0.74          & 0.85          \\ \hline
+        \multirow{2}{*}{40per80at0.05}   & Lenient & -402.89              & 1.00      & 0.74          & 0.85          \\
+                                         & Strict  & -402.89              & 1.00      & 0.74          & 0.85          \\ \hline
+        \multirow{2}{*}{60per120at0.05}  & Lenient & -402.11              & 1.00      & 0.74          & 0.85          \\
+                                         & Strict  & -402.11              & 1.00      & 0.74          & 0.85          \\ \hline
+        \multirow{2}{*}{120per240at0.05} & Lenient & \textbf{-377.67}     & 1.00      & 0.74          & 0.85          \\
+                                         & Strict  & \textbf{-377.67}     & 1.00      & 0.74          & 0.85          \\ \hline
+        \multirow{2}{*}{5seqAt0.05}      & Lenient & -421.19              & 1.00      & 0.74          & 0.85          \\
+                                         & Strict  & -421.19              & 1.00      & 0.74          & 0.85          \\ \hline
+        \multirow{2}{*}{10seqAt0.05}     & Lenient & -419.74              & 1.00      & 0.74          & 0.85          \\
+                                         & Strict  & -419.74              & 1.00      & 0.74          & 0.85          \\ \hline
+        \multirow{2}{*}{20seqAt0.05}     & Lenient & -393.89              & 1.00      & 0.74          & 0.85          \\
+                                         & Strict  & -393.89              & 1.00      & 0.74          & 0.85          \\ \hline
+        \multirow{2}{*}{30seqAt0.05}     & Lenient & -380.89              & 1.00      & 0.74          & 0.85          \\
+                                         & Strict  & -380.89              & 1.00      & 0.74          & 0.85          \\ \hline
+        \multirow{2}{*}{40seqAt0.05}     & Lenient & -392.04              & 1.00      & 0.74          & 0.85          \\
+                                         & Strict  & -392.04              & 1.00      & 0.74          & 0.85          \\ \hline
+        \multirow{2}{*}{60seqAt0.05}     & Lenient & -417.85              & 1.00      & 0.79          & 0.88          \\
+                                         & Strict  & -417.85              & 1.00      & 0.79          & 0.88          \\ \hline
+        \multirow{2}{*}{120seqAt0.05}    & Lenient & -421.52              & 1.00      & \textbf{0.84} & \textbf{0.91} \\
+                                         & Strict  & -421.52              & 1.00      & \textbf{0.84} & \textbf{0.91} \\ \hline
+    \end{tabular}
+    \caption{Results when using the first 150 time steps of each day. Best for each metric in bold.}
+\end{table}
+
+\clearpage
+\subsubsection{Nitrogen Generator}
+
+Tables 7 and 8 report the MTFE, F1, Precision, and Recall scores for the T$^2$ control charts that were determined based on the
+last $p$ proportion of the training split. The precision, recall, and F$_1$ results were identical for all patterns and all splits
+so the results in table 8 represent all of those metrics. During the experiments to use the first portion of the day, we were unable
+to find an interval of time that would result in an invertible covariance matrix, thus the statistics could not be computed.
+The patterns are described in the first column of each table
+and translate to "XperYat$\alpha$" or "XseqAt$\alpha$" where $\alpha=0.05$, X is the number of breaches, and Y is the length
+of the window.
+
+Overall, there are not many differences between the results for the lenient and strict evaluation protocols for all tables.
+The approximate spacing between time intervals is 1 minute. The values that most closely mimic the 20 minute RW with 30
+minute PW would be the "30seqAt0.05" row from each table.
+
+\begin{table}[h!]
+    \begin{tabular}{|c|cc|cc|cc|cc|}
+        \hline
+                        & \multicolumn{8}{c|}{Proportion of Training Split}                                                                              \\
+                        & \multicolumn{2}{c}{0.25}      & \multicolumn{2}{c}{0.5}       & \multicolumn{2}{c}{0.75}      & \multicolumn{2}{c|}{1}         \\
+                        & \multicolumn{1}{c}{Lenient} & \multicolumn{1}{c}{Strict} & \multicolumn{1}{c}{Lenient} & \multicolumn{1}{c}{Strict} & \multicolumn{1}{c}{Lenient} & \multicolumn{1}{c}{Strict} & \multicolumn{1}{c}{Lenient} & \multicolumn{1}{c|}{Strict} \\ \hline
+        5per10at0.05    & -764          & -764          & -764          & -764          & -791          & -791          & -791          & -791          \\
+        10per20at0.05   & -755          & -755          & -764          & -764          & -791          & -791          & -791          & -791          \\
+        20per40at0.05   & -757          & -757          & -763          & -763          & -791          & -791          & -791          & -791          \\
+        30per60at0.05   & -758          & -758          & -765          & -765          & -791          & -791          & -791          & -791          \\
+        40per80at0.05   & -756          & -756          & -766          & -766          & -791          & -791          & -791          & -791          \\
+        60per120at0.05  & -683          & -683          & -767          & -767          & -791          & -791          & -791          & -791          \\
+        120per240at0.05 & -691          & -691          & -691          & -691          & -791          & -791          & -791          & -791          \\ \hline
+        5seqAt0.05      & -755          & -755          & -762          & -762          & -791          & -791          & -791          & -791          \\
+        10seqAt0.05     & -753          & -753          & -762          & -762          & -791          & -791          & -791          & -791          \\
+        20seqAt0.05     & \textbf{-676} & \textbf{-676} & -759          & -759          & -791          & -791          & -791          & -791          \\
+        30seqAt0.05     & \textbf{-676} & \textbf{-676} & -759          & -759          & -791          & -791          & -791          & -791          \\
+        40seqAt0.05     & \textbf{-676} & \textbf{-676} & \textbf{-676} & \textbf{-676} & -791          & -791          & -791          & -791          \\
+        60seqAt0.05     & \textbf{-676} & \textbf{-676} & \textbf{-676} & \textbf{-676} & -791          & -791          & -791          & -791          \\
+        120seqAt0.05    & \textbf{-676} & \textbf{-676} & \textbf{-676} & \textbf{-676} & -791          & -791          & -791          & -791          \\ \hline
+        \textbf{Mean}   & \textbf{-718} & \textbf{-718} & \textbf{-739} & \textbf{-739} & \textbf{-791} & \textbf{-791} & \textbf{-791} & \textbf{-791} \\ \hline
+    \end{tabular}
+    \caption{Mean Time From Event for the T$^2$ Control Charts trained on varying portions of the training split. Best absolute result per column in bold, best without surpasing the start of failure in italics with *}
+\end{table}
+
+\begin{table}[]
+    \begin{tabular}{|c|cc|cc|cc|cc|}
+        \hline
+                        & \multicolumn{8}{c|}{Proportion of Training Split}                                                                                                                                                                                          \\
+                        & \multicolumn{2}{c}{0.25}                                 & \multicolumn{2}{c}{0.5}                                  & \multicolumn{2}{c}{0.75}                                 & \multicolumn{2}{c|}{1}                                    \\
+                        & \multicolumn{1}{c}{Lenient} & \multicolumn{1}{c}{Strict} & \multicolumn{1}{c}{Lenient} & \multicolumn{1}{c}{Strict} & \multicolumn{1}{c}{Lenient} & \multicolumn{1}{c}{Strict} & \multicolumn{1}{c}{Lenient} & \multicolumn{1}{c|}{Strict} \\ \hline
+        5per10at0.05    & 0.00                        & 0.00                       & 0.00                        & 0.00                       & 0.00                        & 0.00                       & 0.00                        & 0.00                       \\
+        10per20at0.05   & 0.00                        & 0.00                       & 0.00                        & 0.00                       & 0.00                        & 0.00                       & 0.00                        & 0.00                       \\
+        20per40at0.05   & 0.00                        & 0.00                       & 0.00                        & 0.00                       & 0.00                        & 0.00                       & 0.00                        & 0.00                       \\
+        30per60at0.05   & 0.00                        & 0.00                       & 0.00                        & 0.00                       & 0.00                        & 0.00                       & 0.00                        & 0.00                       \\
+        40per80at0.05   & 0.00                        & 0.00                       & 0.00                        & 0.00                       & 0.00                        & 0.00                       & 0.00                        & 0.00                       \\
+        60per120at0.05  & 0.00                        & 0.00                       & 0.00                        & 0.00                       & 0.00                        & 0.00                       & 0.00                        & 0.00                       \\
+        120per240at0.05 & \textbf{1.00}               & \textbf{1.00}              & 0.00                        & 0.00                       & 0.00                        & 0.00                       & 0.00                        & 0.00                       \\ \hline
+        5seqAt0.05      & 0.00                        & 0.00                       & 0.00                        & 0.00                       & 0.00                        & 0.00                       & 0.00                        & 0.00                       \\
+        10seqAt0.05     & 0.00                        & 0.00                       & 0.00                        & 0.00                       & 0.00                        & 0.00                       & 0.00                        & 0.00                       \\
+        20seqAt0.05     & 0.00                        & 0.00                       & 0.00                        & 0.00                       & 0.00                        & 0.00                       & 0.00                        & 0.00                       \\
+        30seqAt0.05     & 0.00                        & 0.00                       & 0.00                        & 0.00                       & 0.00                        & 0.00                       & 0.00                        & 0.00                       \\
+        40seqAt0.05     & 0.00                        & 0.00                       & 0.00                        & 0.00                       & 0.00                        & 0.00                       & 0.00                        & 0.00                       \\
+        60seqAt0.05     & 0.00                        & 0.00                       & 0.00                        & 0.00                       & 0.00                        & 0.00                       & 0.00                        & 0.00                       \\
+        120seqAt0.05    & \textbf{1.00}               & \textbf{1.00}              & 0.00                        & 0.00                       & 0.00                        & 0.00                       & 0.00                        & 0.00                       \\ \hline
+        \textbf{Mean}   & \textbf{0.14}               & \textbf{0.14}              & \textbf{0.00}               & \textbf{0.00}              & \textbf{0.00}               & \textbf{0.00}              & \textbf{0.00}               & \textbf{0.00}              \\ \hline
+    \end{tabular}
+    \caption{F$_1$ scores for T$^2$ Control Charts on varying portions of the training split. The Precision and Recall score tables are identical, so we will simply reference these numbers. Best in bold.}
+\end{table}
+
+
+\clearpage
 \subsection{Transformer}
+During training a number of issues were encountered that prevented a useable, fine-tuned MOMENT model from being used. Since we
+were attempting to perform time series classification for each 20 minute reading window, we tried to use the package provided by
+the research group\footnote{https://github.com/moment-timeseries-foundation-model/moment}. There was a bug in calling the classification
+architecture specifically and mention of this was found in the issues of their GitHub repo. To circumvent this, we implemented the
+necessary functionality from scratch in our implementation based on the code in their repo that would be used for classification
+tasks. We could successfully instantiate a model and complete forward passes and gradient backpropogations.
+
+We then encountered issues during fine-tuning. Over epochs the loss would not decrease. After checking that gradients were being
+generated and pushed through the model at each step, tensor computations were being properly executed, and that the logits and
+labels were as expected, we proceeded to attempt a hyperparameter search. Given the size of the model and the limitations of the
+local compute (NVIDIA 4070 TI Super 16GB), we opted for a modest hyperparameter space that searched over various learning rates,
+weight decays, gradient clipping sizes, and dropout probabilities. Still, no improvements were noticed.
+
+At this point we decided to modify the class weights we were passing to the loss functin to address class imbalance. As shown
+in equation 7, we used the normalized inverse ratio to give more importance to the loss for the minority class. We experimented
+with modifications to this that increased and decreased the ratio, to no avail. We attempted this along side under- and over-sampling
+methods. Finally, we tried freezing the encoder and embedder in various combinations and using LoRA\cite{Hu2021LoRALA} and 
+PiSSA\cite{meng2024pissaprincipalsingularvalues} parameter efficient fine-tuning methods in a last-ditch effort to train the model.
+
+Since we were unable to obtain a tuned model, we will not report results for this as they would be uninformative.
 
 \subsection{Reinforcement Learning}
 
+
+
+\clearpage
 \section{Discussion}
 
 \subsection{Findings}
